@@ -173,18 +173,55 @@ function Projects() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [task, setTask] = useState({ projectId: workspace.projects[0]?.id || "", title: "", priority: "medium" });
+
   async function move(projectId, task) {
     const order = ["todo", "in-progress", "done"];
-    setBusy(task.id); setError("");
+    setBusy(`move-${task.id}`); setError("");
     try { await request(`/api/projects/${projectId}/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ status: order[(order.indexOf(task.status) + 1) % order.length] }) }); await refresh(); }
     catch (reason) { setError(reason.message); } finally { setBusy(""); }
   }
+
   async function addTask(event) {
     event.preventDefault(); setError("");
     try { await request(`/api/projects/${task.projectId}/tasks`, { method: "POST", body: JSON.stringify(task) }); setTask({ ...task, title: "" }); await refresh(); }
     catch (reason) { setError(reason.message); }
   }
-  return <><PageIntro eyebrow="PROJECT WORKSPACE" title="Ideas become shared progress." copy="Every update is tied to a verified identity and checked again at the API boundary." /><form className="quick-task-form" onSubmit={addTask}><select aria-label="Project" value={task.projectId} onChange={(event) => setTask({ ...task, projectId: event.target.value })}>{workspace.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><input aria-label="Task title" required minLength="3" maxLength="100" placeholder="Add a task for the team…" value={task.title} onChange={(event) => setTask({ ...task, title: event.target.value })} /><select aria-label="Priority" value={task.priority} onChange={(event) => setTask({ ...task, priority: event.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select><button className="primary-button" type="submit">Add task</button></form>{error && <div className="inline-error" role="alert">{error}</div>}<div className="project-stack">{workspace.projects.map((project) => <article className="project-panel" key={project.id}><div className="project-heading"><div><span className={`project-dot ${project.color}`} /><div><h2>{project.name}</h2><p>{project.summary}</p></div></div><span className="member-stack">{project.members.map((member) => <i key={member}>{initials(member)}</i>)}</span></div><div className="kanban">{["todo", "in-progress", "done"].map((status) => <div className="kanban-column" key={status}><h3>{status === "todo" ? "TO DO" : status === "in-progress" ? "IN PROGRESS" : "DONE"}<span>{project.tasks.filter((item) => item.status === status).length}</span></h3>{project.tasks.filter((item) => item.status === status).map((item) => <button disabled={busy === item.id} onClick={() => move(project.id, item)} className="task-card" key={item.id}><span className={`priority ${item.priority}`}>{item.priority}</span><strong>{item.title}</strong><small>{item.assignee} · click to advance</small></button>)}</div>)}</div></article>)}</div></>;
+
+  async function removeTask(projectId, taskId) {
+    setBusy(`delete-${taskId}`); setError("");
+    try { await request(`/api/projects/${projectId}/tasks/${taskId}`, { method: "DELETE" }); await refresh(); }
+    catch (reason) { setError(reason.message); } finally { setBusy(""); }
+  }
+
+  async function removeProject(projectId) {
+    setBusy(`delete-${projectId}`); setError("");
+    try { await request(`/api/projects/${projectId}`, { method: "DELETE" }); await refresh(); }
+    catch (reason) { setError(reason.message); } finally { setBusy(""); }
+  }
+
+  return <>
+    <PageIntro eyebrow="PROJECT WORKSPACE" title="Ideas become shared progress." copy="Every update is tied to a verified identity and checked again at the API boundary." />
+    <form className="quick-task-form" onSubmit={addTask}>
+      <select aria-label="Project" value={task.projectId} onChange={(event) => setTask({ ...task, projectId: event.target.value })}>{workspace.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select>
+      <input aria-label="Task title" required minLength="3" maxLength="100" placeholder="Add a task for the team…" value={task.title} onChange={(event) => setTask({ ...task, title: event.target.value })} />
+      <select aria-label="Priority" value={task.priority} onChange={(event) => setTask({ ...task, priority: event.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select>
+      <button className="primary-button" type="submit">Add task</button>
+    </form>
+    {error && <div className="inline-error" role="alert">{error}</div>}
+    <div className="project-stack">{workspace.projects.map((project) => <article className="project-panel" key={project.id}>
+      <div className="project-heading">
+        <div><span className={`project-dot ${project.color}`} /><div><h2>{project.name}</h2><p>{project.summary}</p></div></div>
+        <div className="project-actions"><span className="member-stack">{project.members.map((member) => <i key={member}>{initials(member)}</i>)}</span>{workspace.user.roles.includes("admin") && <button className="danger-button" disabled={busy === `delete-${project.id}`} onClick={() => removeProject(project.id)}>Delete project</button>}</div>
+      </div>
+      <div className="kanban">{["todo", "in-progress", "done"].map((status) => <div className="kanban-column" key={status}>
+        <h3>{status === "todo" ? "TO DO" : status === "in-progress" ? "IN PROGRESS" : "DONE"}<span>{project.tasks.filter((item) => item.status === status).length}</span></h3>
+        {project.tasks.filter((item) => item.status === status).map((item) => <div className="task-card" key={item.id}>
+          <span className={`priority ${item.priority}`}>{item.priority}</span><strong>{item.title}</strong><small>{item.assignee}</small>
+          <div className="task-actions"><button disabled={busy === `move-${item.id}`} onClick={() => move(project.id, item)}>Advance</button><button className="danger-link" disabled={busy === `delete-${item.id}`} onClick={() => removeTask(project.id, item.id)}>Delete</button></div>
+        </div>)}
+      </div>)}</div>
+    </article>)}</div>
+  </>;
 }
 
 function AdminPanel() {

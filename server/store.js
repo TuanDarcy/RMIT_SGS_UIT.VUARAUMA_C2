@@ -63,6 +63,28 @@ export function createTask(projectId, input, auth) {
   return structuredClone(task);
 }
 
+export function deleteTask(projectId, taskId, auth) {
+  if (!auth.roles.some((role) => role === "admin" || role === "member")) throw Object.assign(new Error("Member role required"), { status: 403 });
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) throw Object.assign(new Error("Project not found"), { status: 404 });
+  const taskIndex = project.tasks.findIndex((item) => item.id === taskId);
+  if (taskIndex === -1) throw Object.assign(new Error("Task not found"), { status: 404 });
+  const [task] = project.tasks.splice(taskIndex, 1);
+  const actor = auth.claims.name || auth.claims.preferred_username || auth.claims.sub;
+  state.audit.unshift({ id: randomUUID(), action: "Task deleted", detail: `${actor} deleted “${task.title}” from ${project.name}.`, at: new Date().toISOString() });
+  return structuredClone(task);
+}
+
+export function deleteProject(projectId, auth) {
+  if (!auth.roles.includes("admin")) throw Object.assign(new Error("Admin role required"), { status: 403 });
+  const projectIndex = state.projects.findIndex((item) => item.id === projectId);
+  if (projectIndex === -1) throw Object.assign(new Error("Project not found"), { status: 404 });
+  const [project] = state.projects.splice(projectIndex, 1);
+  const actor = auth.claims.name || auth.claims.preferred_username || auth.claims.sub;
+  state.audit.unshift({ id: randomUUID(), action: "Project deleted", detail: `${actor} deleted ${project.name}.`, at: new Date().toISOString() });
+  return structuredClone(project);
+}
+
 export function resetStoreForTests() {
   state.projects.splice(2);
   state.audit.splice(2);

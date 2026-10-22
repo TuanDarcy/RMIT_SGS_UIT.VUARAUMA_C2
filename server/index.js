@@ -2,7 +2,7 @@ import express from "express";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { authenticate, requireRoles } from "./auth/middleware.js";
-import { createProject, createTask, updateTask, workspaceSnapshot } from "./store.js";
+import { createProject, createTask, deleteProject, deleteTask, updateTask, workspaceSnapshot } from "./store.js";
 
 export function createApp() {
   const app = express();
@@ -25,6 +25,12 @@ export function createApp() {
   });
   app.patch("/api/projects/:projectId/tasks/:taskId", authenticate, requireRoles("member", "admin"), (request, response, next) => {
     try { response.json(updateTask(request.params.projectId, request.params.taskId, request.body, request.auth)); } catch (error) { next(error); }
+  });
+  app.delete("/api/projects/:projectId/tasks/:taskId", authenticate, requireRoles("member", "admin"), (request, response, next) => {
+    try { response.json(deleteTask(request.params.projectId, request.params.taskId, request.auth)); } catch (error) { next(error); }
+  });
+  app.delete("/api/projects/:projectId", authenticate, requireRoles("admin"), (request, response, next) => {
+    try { response.json(deleteProject(request.params.projectId, request.auth)); } catch (error) { next(error); }
   });
   app.use("/api", (_request, response) => response.status(404).json({ error: "API route not found" }));
 

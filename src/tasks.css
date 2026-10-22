@@ -19,6 +19,42 @@
   font-size: 10px;
 }
 
+.project-actions,
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.danger-button,
+.task-actions button {
+  border: 1px solid #e1dce8;
+  border-radius: 7px;
+  background: #fff;
+  color: #625d6d;
+  padding: 7px 9px;
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.danger-button,
+.task-actions .danger-link {
+  color: #b44d47;
+  border-color: #efd5d2;
+  background: #fff7f6;
+}
+
+.task-actions {
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.task-actions button:disabled,
+.danger-button:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
 @media (max-width: 760px) {
   .quick-task-form { grid-template-columns: 1fr; }
 }
