@@ -141,7 +141,7 @@ The check runs ESLint, Node security/authorization tests and the production Vite
 - Automated checks: ESLint, 8 Node tests, production build, npm audit and Tide Doctor passed on 2026-10-22.
 - TideCloak local verification: realm `trustflow`, client `trustflow-client`, IGA and admin Tide account linking completed. The exported adapter and Docker data remain intentionally local and gitignored.
 - Authorization status: the linked account has effective `member`; its TrustFlow `admin` grant is an IGA change request awaiting explicit Tide approval in the Tide console.
-- Repository submission/push: **not performed by this implementation session**.
+- Repository source: pushed to `origin/codex/trustflow-tidecloak` (implementation commit `e3f299b`) on 2026-10-22. This branch is not claimed as merged into `main` or formally submitted to the organizer.
 - Final demo video target: `Video.mp4` in the repository root. The existing file predates TrustFlow work and must be replaced with a newly recorded TrustFlow demo before submission; it is not claimed as the final recording.
 
 ## Team
