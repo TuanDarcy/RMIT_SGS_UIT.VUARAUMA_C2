@@ -30,7 +30,7 @@ Submit a synthetic request, inspect its sealed state, then sign in as stewards t
 
 Requirements: Node.js 20+, npm, a TideCloak realm and public client. Configure redirect URI `http://localhost:5137/auth/redirect` and web origin `http://localhost:5137`.
 
-Create realm roles `member` and `steward` (stewards also need `member`), plus Tide encryption roles `_tide_commons-case.selfencrypt` and `_tide_commons-case.selfdecrypt`. Assign encryption roles only to intended users. Copy the exported public adapter to the ignored path `public/tidecloak.json`; do not commit secrets.
+Create realm roles `member` and `steward` (stewards also need `member`), assign `steward` to exactly three independent reviewers, and create Tide encryption roles `_tide_commons-case.selfencrypt` and `_tide_commons-case.selfdecrypt`. Assign encryption roles only to intended users. Copy the exported public adapter to the ignored path `public/tidecloak.json`; do not commit secrets.
 
 ```powershell
 npm.cmd ci
