@@ -16,14 +16,14 @@
 .approval-form textarea,
 .approval-form select {
   width: 100%;
-  min-height: 42px;
+  min-height: 44px;
   padding: 10px 12px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
   outline: none;
   background: #fff;
   color: var(--ink-strong);
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .quick-task-form input::placeholder,
@@ -47,7 +47,7 @@
 .task-actions { display: flex; align-items: center; gap: 8px; }
 
 .danger-button,
-.task-actions button { min-height: 32px; padding: 7px 10px; border: 1px solid var(--line); background: #fff; color: #475467; font-size: 8px; }
+.task-actions button { min-height: 34px; padding: 7px 10px; border: 1px solid var(--line); background: #fff; color: #475467; font-size: 11px; }
 .danger-button:hover:not(:disabled),
 .task-actions .danger-link:hover:not(:disabled) { border-color: #f3bcc1; background: var(--danger-soft); color: var(--danger); }
 .danger-button,
@@ -56,17 +56,17 @@
 .task-actions button:first-child:hover:not(:disabled) { border-color: var(--primary-line); background: var(--primary-soft); color: var(--primary); }
 
 .approval-layout { display: grid; grid-template-columns: minmax(280px, 0.75fr) minmax(360px, 1.25fr); gap: 18px; align-items: start; }
-.approval-form label { margin: 14px 0; display: grid; gap: 7px; color: #344054; font-size: 10px; font-weight: 700; }
+.approval-form label { margin: 14px 0; display: grid; gap: 7px; color: #344054; font-size: 12px; font-weight: 700; }
 .approval-form textarea { min-height: 108px; resize: vertical; }
 .approval-list { display: grid; gap: 12px; }
 .approval-card { padding: 19px; border-radius: var(--radius-md); }
 .approval-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.approval-card h2 { margin: 13px 0 7px; color: var(--ink-strong); font-size: 14px; font-weight: 750; letter-spacing: -0.02em; }
-.approval-card p { margin: 0 0 13px; color: var(--muted); font-size: 10px; line-height: 1.65; }
-.approval-card small { display: block; margin-top: 5px; color: var(--muted-soft); font-size: 8px; }
+.approval-card h2 { margin: 13px 0 7px; color: var(--ink-strong); font-size: 16px; font-weight: 750; letter-spacing: -0.02em; }
+.approval-card p { margin: 0 0 13px; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.approval-card small { display: block; margin-top: 5px; color: var(--muted-soft); font-size: 10px; }
 
 .approval-risk,
-.approval-status { padding: 4px 8px; border-radius: 999px; font-size: 7px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
+.approval-status { padding: 4px 8px; border-radius: 999px; font-size: 9px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }
 .approval-risk { background: var(--primary-soft); color: var(--primary); }
 .approval-risk.high { background: var(--danger-soft); color: var(--danger); }
 .approval-risk.low { background: var(--success-soft); color: var(--success); }
@@ -75,7 +75,7 @@
 .approval-status.rejected { background: var(--danger-soft); color: var(--danger); }
 
 .approval-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
-.approval-actions button { min-height: 34px; padding: 7px 11px; border: 1px solid #ccebdd; background: var(--success-soft); color: var(--success); font-size: 8px; }
+.approval-actions button { min-height: 36px; padding: 7px 11px; border: 1px solid #ccebdd; background: var(--success-soft); color: var(--success); font-size: 11px; }
 .approval-actions button:hover:not(:disabled) { border-color: #9fd7c0; background: #dff4eb; }
 .approval-actions .reject { border-color: #f3d4d7; background: var(--danger-soft); color: var(--danger); }
 .approval-actions .cancel { margin-left: auto; border-color: var(--line); background: #f8f9fb; color: var(--muted); }
