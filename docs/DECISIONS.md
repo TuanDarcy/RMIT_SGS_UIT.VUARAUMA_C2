@@ -14,3 +14,6 @@
 - Added `member` as a default realm role. The first account's application-level `admin` grant remains a governed IGA change request until the operator explicitly approves it.
 - Kept Tide's default sign-in branding at the operator's request.
 - Added optional in-app onboarding for a display name only. It stores the value as Keycloak `firstName` through the Account API using the user's token; it does not collect or synthesize email.
+- Completed task/project CRUD without weakening the security boundary: Members may delete tasks, while project deletion remains Admin-only and is checked by the API.
+- Added a governed approval workflow for higher-risk team decisions. A Member or Admin may request approval, only a different Admin may decide it, and only the requester or an Admin may cancel a pending request.
+- Kept approval execution explicit: this prototype records a governed decision and audit event; it does not claim to execute payments, contracts or cryptographic multi-party quorum.

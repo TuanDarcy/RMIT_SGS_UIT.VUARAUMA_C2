@@ -16,20 +16,21 @@ The prototype focuses on a working vertical slice:
 - Dismissible first-login display-name onboarding through the user's own Account API token; no email is requested or invented.
 - Responsive overview, project board and explicit unauthorized page.
 - Admin and Member roles, read from the verified token.
-- Server-protected workspace reads, task updates and admin-only project creation.
+- Complete project/task CRUD with destructive operations protected again at the API.
+- Governed approval requests: Members propose changes, a different Admin approves or rejects them, and request ownership is enforced for cancellation.
 - An actor-bound activity trail for protected changes.
 
 ## 2. Trust constraint insight
 
 Ordinary collaboration tools often rely on the browser to hide controls, or on one backend role table that an attacker can bypass after compromising the app. In TrustFlow, client checks improve the experience but never make the authorization decision.
 
-The Express API fails closed. It validates the JWT signature against the adapter's **embedded JWK**, checks issuer and authorized party, requires a valid RFC 9449 DPoP proof for sender-bound tokens, rejects proof replay, and only then evaluates `admin` or `member` roles from the verified token. Missing configuration, missing roles, expired tokens, Bearer replay of a bound token and invalid proof details all produce 401/403 responses.
+The Express API fails closed. It validates the JWT signature against the adapter's **embedded JWK**, checks issuer and authorized party, requires a valid RFC 9449 DPoP proof for sender-bound tokens, rejects proof replay, and only then evaluates `admin` or `member` roles from the verified token. Missing configuration, missing roles, expired tokens, Bearer replay of a bound token and invalid proof details all produce 401/403 responses. Approval requests add separation of duties: even an Admin cannot approve a change they requested themselves.
 
 ## 3. Value & impact
 
-TrustFlow helps student teams coordinate work without turning one team leader or one browser session into unchecked authority. A Member can view projects and advance tasks. Only an Admin can create a project. Both operations are enforced at the API even if someone calls it directly.
+TrustFlow helps student teams coordinate work without turning one team leader or one browser session into unchecked authority. A Member can create, update and delete tasks. Only an Admin can create or delete projects. Members can request a sensitive change, but only a different verified Admin can approve or reject it. Every operation is enforced at the API even if someone bypasses the interface.
 
-For judges, the concrete story is simple: sign in, advance a task as a Member, attempt the Admin URL and observe the 403 experience, then sign in as an Admin and create a project through the protected API.
+For judges, the concrete story is simple: sign in, manage a task as a Member, request approval for a high-risk change, attempt the Admin URL and observe the 403 experience, then sign in as an Admin to decide the request and create or delete a project through the protected API.
 
 ## 4. Why TideCloak matters
 
@@ -51,9 +52,10 @@ The prototype demonstrates the security boundary rather than a fake login. Witho
 1. Continue with TideCloak and complete the real hosted/local login.
 2. Return through `/auth/redirect`; the SDK exchanges and restores the session.
 3. Load `/api/workspace` through DPoP-aware `secureFetch`.
-4. Move a task and see a verified event appear.
-5. Visit `/admin` as a Member to see the unauthorized experience.
-6. Sign in as an Admin and create a project through an independently protected API.
+4. Create, move and delete a task and see actor-bound audit events appear.
+5. Submit a high-risk approval request as a Member.
+6. Visit `/admin` as a Member to see the unauthorized experience and server-side 403.
+7. Sign in as a different Admin, approve the request, then create and delete a temporary project through independently protected APIs.
 
 See [docs/DEMO_VIDEO.md](docs/DEMO_VIDEO.md) for the narration and recording checklist.
 
@@ -138,10 +140,10 @@ The check runs ESLint, Node security/authorization tests and the production Vite
 ## Current submission status
 
 - Source application: implemented on branch `codex/trustflow-tidecloak`.
-- Automated checks: ESLint, 8 Node tests, production build, npm audit and Tide Doctor passed on 2026-10-22.
+- Automated checks: ESLint, 14 Node tests, production build and npm audit passed on 2026-10-22. The earlier Tide Doctor run also passed its configured checks.
 - TideCloak local verification: realm `trustflow`, client `trustflow-client`, IGA and admin Tide account linking completed. The exported adapter and Docker data remain intentionally local and gitignored.
 - Authorization status: the linked account has effective `member`; its TrustFlow `admin` grant is an IGA change request awaiting explicit Tide approval in the Tide console.
-- Repository source: pushed to `origin/codex/trustflow-tidecloak` (implementation commit `e3f299b`) on 2026-10-22. This branch is not claimed as merged into `main` or formally submitted to the organizer.
+- Repository source: feature commits through `d9e20b0` are pushed to `origin/codex/trustflow-tidecloak` on 2026-10-22. This branch is not claimed as merged into `main` or formally submitted to the organizer.
 - Final demo video target: `Video.mp4` in the repository root. The existing file predates TrustFlow work and must be replaced with a newly recorded TrustFlow demo before submission; it is not claimed as the final recording.
 
 ## Team
