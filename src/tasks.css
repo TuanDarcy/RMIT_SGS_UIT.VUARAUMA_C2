@@ -55,6 +55,56 @@
   opacity: .55;
 }
 
+.approval-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, .75fr) minmax(340px, 1.25fr);
+  gap: 17px;
+  align-items: start;
+}
+
+.approval-form label {
+  display: grid;
+  gap: 6px;
+  margin: 13px 0;
+  color: #777380;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.approval-form input,
+.approval-form textarea,
+.approval-form select {
+  width: 100%;
+  border: 1px solid #dfdbe6;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+  color: #504c5a;
+  outline: none;
+}
+
+.approval-form textarea { min-height: 100px; resize: vertical; }
+.approval-list { display: grid; gap: 12px; }
+.approval-card { border: 1px solid var(--line); border-radius: 13px; padding: 18px; background: #fff; }
+.approval-card-top { display: flex; align-items: center; justify-content: space-between; }
+.approval-card h2 { margin: 13px 0 7px; font: 700 14px Manrope; }
+.approval-card p { margin: 0 0 13px; color: #797583; font-size: 10px; line-height: 1.6; }
+.approval-card small { display: block; margin-top: 5px; color: #9995a2; font-size: 8px; }
+.approval-risk,
+.approval-status { padding: 4px 7px; border-radius: 12px; font-size: 7px; font-weight: 800; text-transform: uppercase; }
+.approval-risk { background: #eeeaf9; color: #7054cc; }
+.approval-risk.high { background: #fff0eb; color: #c95c49; }
+.approval-risk.low { background: #eaf7ef; color: #398d64; }
+.approval-status { background: #fff7df; color: #9a761d; }
+.approval-status.approved { background: #eaf7ef; color: #398d64; }
+.approval-status.rejected { background: #fff0eb; color: #b85147; }
+.approval-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 15px; }
+.approval-actions button { border: 0; border-radius: 7px; padding: 8px 10px; background: #e9f6ee; color: #35835e; font-size: 8px; font-weight: 800; }
+.approval-actions .reject,
+.approval-actions .cancel { background: #fff0ed; color: #ac4f46; }
+.approval-actions .cancel { margin-left: auto; background: #f2f0f5; color: #77717f; }
+
 @media (max-width: 760px) {
   .quick-task-form { grid-template-columns: 1fr; }
+  .approval-layout { grid-template-columns: 1fr; }
 }

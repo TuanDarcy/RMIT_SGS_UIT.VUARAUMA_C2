@@ -57,6 +57,7 @@ function AuthenticatedApp() {
         <Route element={<WorkspaceLayout tide={tide} />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/projects" element={<Projects />} />
+          <Route path="/approvals" element={<Approvals />} />
           <Route path="/admin" element={<RoleGuard tide={tide} role="admin" />}>
             <Route index element={<AdminPanel />} />
           </Route>
@@ -155,7 +156,7 @@ function WorkspaceLayout({ tide }) {
   const user = workspace.user;
   return (
     <div className="app-shell">
-      <aside className="sidebar"><Brand light /><nav className="side-nav"><NavLink to="/dashboard">◫ <span>Overview</span></NavLink><NavLink to="/projects">◆ <span>Projects</span></NavLink>{user.roles.includes("admin") && <NavLink to="/admin">⌘ <span>Admin</span></NavLink>}</nav><div className="security-card"><span>◉</span><strong>TideCloak active</strong><small>JWT + DPoP enforced</small></div><button className="logout-link" onClick={() => tide.logout()}>↪ Log out</button></aside>
+      <aside className="sidebar"><Brand light /><nav className="side-nav"><NavLink to="/dashboard">◫ <span>Overview</span></NavLink><NavLink to="/projects">◆ <span>Projects</span></NavLink><NavLink to="/approvals">✓ <span>Approvals</span></NavLink>{user.roles.includes("admin") && <NavLink to="/admin">⌘ <span>Admin</span></NavLink>}</nav><div className="security-card"><span>◉</span><strong>TideCloak active</strong><small>JWT + DPoP enforced</small></div><button className="logout-link" onClick={() => tide.logout()}>↪ Log out</button></aside>
       <div className="workspace-shell"><header className="workspace-header"><div><small>SECURE WORKSPACE</small><strong>UIT.VUARAUMA</strong></div><div className="profile"><span className="avatar">{initials(user.name)}</span><div><b>{user.name}</b><small>{roleCopy[user.primaryRole] || "Verified user"}</small></div></div></header><main className="workspace-main"><Outlet /></main></div>
     </div>
   );
@@ -165,7 +166,8 @@ function Dashboard() {
   const { workspace } = useWorkspace();
   const tasks = workspace.projects.flatMap((project) => project.tasks);
   const done = tasks.filter((task) => task.status === "done").length;
-  return <><PageIntro eyebrow="GOOD MORNING" title={`Build with confidence, ${workspace.user.firstName}.`} copy="Your team’s priorities, progress and decisions in one verified workspace." /><section className="metrics"><Metric label="ACTIVE PROJECTS" value={workspace.projects.length} note="Across your workspace" tone="violet" /><Metric label="OPEN TASKS" value={tasks.length - done} note={`${tasks.filter((task) => task.priority === "high" && task.status !== "done").length} high priority`} tone="coral" /><Metric label="COMPLETION" value={`${tasks.length ? Math.round(done / tasks.length * 100) : 0}%`} note={`${done} of ${tasks.length} completed`} tone="mint" /><Metric label="VERIFIED EVENTS" value={workspace.audit.length} note="Protected API actions" tone="blue" /></section><section className="content-grid"><div className="panel"><PanelTitle title="Project pulse" link="/projects" />{workspace.projects.map((project) => <ProjectRow key={project.id} project={project} />)}</div><div className="panel"><PanelTitle title="Recent verified activity" /><div className="activity-list">{workspace.audit.slice(0, 5).map((item) => <div className="activity" key={item.id}><i /><div><strong>{item.action}</strong><p>{item.detail}</p><small>{new Date(item.at).toLocaleString()}</small></div></div>)}</div></div></section></>;
+  const pendingApprovals = workspace.approvals.filter((approval) => approval.status === "pending").length;
+  return <><PageIntro eyebrow="GOOD MORNING" title={`Build with confidence, ${workspace.user.firstName}.`} copy="Your team’s priorities, progress and decisions in one verified workspace." /><section className="metrics"><Metric label="ACTIVE PROJECTS" value={workspace.projects.length} note="Across your workspace" tone="violet" /><Metric label="OPEN TASKS" value={tasks.length - done} note={`${tasks.filter((task) => task.priority === "high" && task.status !== "done").length} high priority`} tone="coral" /><Metric label="COMPLETION" value={`${tasks.length ? Math.round(done / tasks.length * 100) : 0}%`} note={`${done} of ${tasks.length} completed`} tone="mint" /><Metric label="PENDING APPROVALS" value={pendingApprovals} note="Awaiting an Admin decision" tone="blue" /></section><section className="content-grid"><div className="panel"><PanelTitle title="Project pulse" link="/projects" />{workspace.projects.map((project) => <ProjectRow key={project.id} project={project} />)}</div><div className="panel"><PanelTitle title="Recent verified activity" /><div className="activity-list">{workspace.audit.slice(0, 5).map((item) => <div className="activity" key={item.id}><i /><div><strong>{item.action}</strong><p>{item.detail}</p><small>{new Date(item.at).toLocaleString()}</small></div></div>)}</div></div></section></>;
 }
 
 function Projects() {
@@ -221,6 +223,63 @@ function Projects() {
         </div>)}
       </div>)}</div>
     </article>)}</div>
+  </>;
+}
+
+function Approvals() {
+  const { workspace, request, refresh } = useWorkspace();
+  const [form, setForm] = useState({ title: "", description: "", risk: "medium" });
+  const [busy, setBusy] = useState("");
+  const [message, setMessage] = useState("");
+  const isAdmin = workspace.user.roles.includes("admin");
+
+  async function submit(event) {
+    event.preventDefault(); setBusy("create"); setMessage("");
+    try {
+      await request("/api/approvals", { method: "POST", body: JSON.stringify(form) });
+      setForm({ title: "", description: "", risk: "medium" });
+      await refresh();
+      setMessage("Approval request created with your verified identity.");
+    } catch (reason) { setMessage(reason.message); } finally { setBusy(""); }
+  }
+
+  async function decide(approvalId, decision) {
+    setBusy(`${decision}-${approvalId}`); setMessage("");
+    try { await request(`/api/approvals/${approvalId}/decision`, { method: "PATCH", body: JSON.stringify({ decision }) }); await refresh(); }
+    catch (reason) { setMessage(reason.message); } finally { setBusy(""); }
+  }
+
+  async function cancel(approvalId) {
+    setBusy(`cancel-${approvalId}`); setMessage("");
+    try { await request(`/api/approvals/${approvalId}`, { method: "DELETE" }); await refresh(); }
+    catch (reason) { setMessage(reason.message); } finally { setBusy(""); }
+  }
+
+  return <>
+    <PageIntro eyebrow="GOVERNED DECISIONS" title="Important changes need a second set of eyes." copy="Members request changes; a different verified Admin approves or rejects them at the API boundary." />
+    <section className="approval-layout">
+      <form className="panel approval-form" onSubmit={submit}>
+        <PanelTitle title="Request approval" />
+        <label>Decision title<input required minLength="3" maxLength="80" value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="Publish final demo" /></label>
+        <label>Why it matters<textarea required minLength="10" maxLength="240" value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="Explain the change and its impact…" /></label>
+        <label>Risk<select value={form.risk} onChange={(event) => setForm({ ...form, risk: event.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select></label>
+        <button className="primary-button" disabled={busy === "create"} type="submit">Submit verified request</button>
+        {message && <p className="form-message" role="status">{message}</p>}
+      </form>
+      <div className="approval-list">{workspace.approvals.map((approval) => {
+        const isRequester = approval.requestedBy.subject === workspace.user.subject;
+        return <article className="approval-card" key={approval.id}>
+          <div className="approval-card-top"><span className={`approval-risk ${approval.risk}`}>{approval.risk} risk</span><span className={`approval-status ${approval.status}`}>{approval.status}</span></div>
+          <h2>{approval.title}</h2><p>{approval.description}</p>
+          <small>Requested by <strong>{approval.requestedBy.name}</strong> · {new Date(approval.createdAt).toLocaleString()}</small>
+          {approval.decidedBy && <small>Decision by <strong>{approval.decidedBy.name}</strong></small>}
+          {approval.status === "pending" && <div className="approval-actions">
+            {isAdmin && !isRequester && <><button disabled={Boolean(busy)} onClick={() => decide(approval.id, "approved")}>Approve</button><button className="reject" disabled={Boolean(busy)} onClick={() => decide(approval.id, "rejected")}>Reject</button></>}
+            {(isRequester || isAdmin) && <button className="cancel" disabled={Boolean(busy)} onClick={() => cancel(approval.id)}>Cancel request</button>}
+          </div>}
+        </article>;
+      })}</div>
+    </section>
   </>;
 }
 

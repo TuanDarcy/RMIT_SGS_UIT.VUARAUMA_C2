@@ -14,16 +14,30 @@ const state = {
       { id: "task-demo", title: "Record judge demo", status: "todo", priority: "medium", assignee: "Minh" },
     ] },
   ],
+  approvals: [
+    {
+      id: "approval-demo",
+      title: "Publish the final demo",
+      description: "Approve the reviewed recording before it is attached to the submission.",
+      risk: "high",
+      status: "pending",
+      requestedBy: { subject: "member-demo", name: "Minh" },
+      createdAt: new Date(Date.now() - 1800000).toISOString(),
+      decidedBy: null,
+      decidedAt: null,
+    },
+  ],
   audit: [
     { id: "audit-1", action: "Workspace secured", detail: "Protected operations require a verified TideCloak identity.", at: new Date().toISOString() },
     { id: "audit-2", action: "Role boundary enabled", detail: "Admin and Member permissions are enforced at the API.", at: new Date(Date.now() - 3600000).toISOString() },
   ],
 };
+const baseline = structuredClone(state);
 
 export function workspaceSnapshot(auth) {
   const claims = auth.claims;
   const name = claims.name || claims.preferred_username || "Verified member";
-  return { user: { subject: claims.sub, name, firstName: name.split(/\s+/)[0], roles: auth.roles.filter((role) => ["admin", "member"].includes(role)), primaryRole: auth.roles.includes("admin") ? "admin" : "member" }, projects: structuredClone(state.projects), audit: structuredClone(state.audit) };
+  return { user: { subject: claims.sub, name, firstName: name.split(/\s+/)[0], roles: auth.roles.filter((role) => ["admin", "member"].includes(role)), primaryRole: auth.roles.includes("admin") ? "admin" : "member" }, projects: structuredClone(state.projects), approvals: structuredClone(state.approvals), audit: structuredClone(state.audit) };
 }
 
 export function createProject(input, auth) {
@@ -85,7 +99,50 @@ export function deleteProject(projectId, auth) {
   return structuredClone(project);
 }
 
+export function createApproval(input, auth) {
+  if (!auth.roles.some((role) => role === "admin" || role === "member")) throw Object.assign(new Error("Member role required"), { status: 403 });
+  const title = String(input.title || "").trim();
+  const description = String(input.description || "").trim();
+  const risk = String(input.risk || "medium");
+  if (title.length < 3 || title.length > 80 || description.length < 10 || description.length > 240 || !new Set(["low", "medium", "high"]).has(risk)) throw Object.assign(new Error("Approval request is invalid"), { status: 400 });
+  const requester = { subject: auth.claims.sub, name: auth.claims.name || auth.claims.preferred_username || auth.claims.sub };
+  const approval = { id: randomUUID(), title, description, risk, status: "pending", requestedBy: requester, createdAt: new Date().toISOString(), decidedBy: null, decidedAt: null };
+  state.approvals.unshift(approval);
+  state.audit.unshift({ id: randomUUID(), action: "Approval requested", detail: `${requester.name} requested approval for “${approval.title}”.`, at: new Date().toISOString() });
+  return structuredClone(approval);
+}
+
+export function decideApproval(approvalId, input, auth) {
+  if (!auth.roles.includes("admin")) throw Object.assign(new Error("Admin role required"), { status: 403 });
+  const approval = state.approvals.find((item) => item.id === approvalId);
+  if (!approval) throw Object.assign(new Error("Approval request not found"), { status: 404 });
+  if (approval.status !== "pending") throw Object.assign(new Error("Approval request has already been decided"), { status: 409 });
+  if (approval.requestedBy.subject === auth.claims.sub) throw Object.assign(new Error("Requesters cannot approve their own change"), { status: 403 });
+  const decision = String(input.decision || "");
+  if (!new Set(["approved", "rejected"]).has(decision)) throw Object.assign(new Error("Decision must be approved or rejected"), { status: 400 });
+  const decisionMaker = { subject: auth.claims.sub, name: auth.claims.name || auth.claims.preferred_username || auth.claims.sub };
+  approval.status = decision;
+  approval.decidedBy = decisionMaker;
+  approval.decidedAt = new Date().toISOString();
+  state.audit.unshift({ id: randomUUID(), action: decision === "approved" ? "Change approved" : "Change rejected", detail: `${decisionMaker.name} ${decision === "approved" ? "approved" : "rejected"} “${approval.title}”.`, at: approval.decidedAt });
+  return structuredClone(approval);
+}
+
+export function cancelApproval(approvalId, auth) {
+  const approvalIndex = state.approvals.findIndex((item) => item.id === approvalId);
+  if (approvalIndex === -1) throw Object.assign(new Error("Approval request not found"), { status: 404 });
+  const approval = state.approvals[approvalIndex];
+  const canCancel = auth.roles.includes("admin") || approval.requestedBy.subject === auth.claims.sub;
+  if (!canCancel) throw Object.assign(new Error("Only the requester or an Admin can cancel this request"), { status: 403 });
+  if (approval.status !== "pending") throw Object.assign(new Error("Only pending requests can be cancelled"), { status: 409 });
+  state.approvals.splice(approvalIndex, 1);
+  const actor = auth.claims.name || auth.claims.preferred_username || auth.claims.sub;
+  state.audit.unshift({ id: randomUUID(), action: "Approval cancelled", detail: `${actor} cancelled “${approval.title}”.`, at: new Date().toISOString() });
+  return structuredClone(approval);
+}
+
 export function resetStoreForTests() {
-  state.projects.splice(2);
-  state.audit.splice(2);
+  state.projects = structuredClone(baseline.projects);
+  state.approvals = structuredClone(baseline.approvals);
+  state.audit = structuredClone(baseline.audit);
 }

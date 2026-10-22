@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createProject, createTask, deleteProject, deleteTask, resetStoreForTests, updateTask, workspaceSnapshot } from "./store.js";
+import { cancelApproval, createApproval, createProject, createTask, decideApproval, deleteProject, deleteTask, resetStoreForTests, updateTask, workspaceSnapshot } from "./store.js";
 
 const admin = { claims: { sub: "admin-1", name: "Admin User" }, roles: ["admin", "member"] };
 const member = { claims: { sub: "member-1", name: "Member User" }, roles: ["member"] };
+const otherMember = { claims: { sub: "member-2", name: "Other Member" }, roles: ["member"] };
 
 test.afterEach(resetStoreForTests);
 
@@ -40,4 +41,25 @@ test("only an admin can delete a project", () => {
   assert.throws(() => deleteProject(project.id, member), { status: 403 });
   assert.equal(deleteProject(project.id, admin).id, project.id);
   assert.equal(workspaceSnapshot(admin).audit[0].action, "Project deleted");
+});
+
+test("member can request approval and admin can decide it", () => {
+  const approval = createApproval({ title: "Release project", description: "Publish the reviewed project to the judges.", risk: "high" }, member);
+  assert.equal(approval.status, "pending");
+  assert.throws(() => decideApproval(approval.id, { decision: "approved" }, member), { status: 403 });
+  const decided = decideApproval(approval.id, { decision: "approved" }, admin);
+  assert.equal(decided.status, "approved");
+  assert.equal(decided.decidedBy.subject, "admin-1");
+  assert.throws(() => decideApproval(approval.id, { decision: "rejected" }, admin), { status: 409 });
+});
+
+test("requester cannot approve their own change", () => {
+  const approval = createApproval({ title: "Admin-authored change", description: "Verify separation between requesting and deciding.", risk: "medium" }, admin);
+  assert.throws(() => decideApproval(approval.id, { decision: "approved" }, admin), { status: 403 });
+});
+
+test("only requester or admin can cancel a pending request", () => {
+  const approval = createApproval({ title: "Cancel test", description: "Verify ownership checks for cancellation.", risk: "low" }, member);
+  assert.throws(() => cancelApproval(approval.id, otherMember), { status: 403 });
+  assert.equal(cancelApproval(approval.id, member).id, approval.id);
 });

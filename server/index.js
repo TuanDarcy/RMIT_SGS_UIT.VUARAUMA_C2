@@ -2,7 +2,7 @@ import express from "express";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { authenticate, requireRoles } from "./auth/middleware.js";
-import { createProject, createTask, deleteProject, deleteTask, updateTask, workspaceSnapshot } from "./store.js";
+import { cancelApproval, createApproval, createProject, createTask, decideApproval, deleteProject, deleteTask, updateTask, workspaceSnapshot } from "./store.js";
 
 export function createApp() {
   const app = express();
@@ -31,6 +31,15 @@ export function createApp() {
   });
   app.delete("/api/projects/:projectId", authenticate, requireRoles("admin"), (request, response, next) => {
     try { response.json(deleteProject(request.params.projectId, request.auth)); } catch (error) { next(error); }
+  });
+  app.post("/api/approvals", authenticate, requireRoles("member", "admin"), (request, response, next) => {
+    try { response.status(201).json(createApproval(request.body, request.auth)); } catch (error) { next(error); }
+  });
+  app.patch("/api/approvals/:approvalId/decision", authenticate, requireRoles("admin"), (request, response, next) => {
+    try { response.json(decideApproval(request.params.approvalId, request.body, request.auth)); } catch (error) { next(error); }
+  });
+  app.delete("/api/approvals/:approvalId", authenticate, requireRoles("member", "admin"), (request, response, next) => {
+    try { response.json(cancelApproval(request.params.approvalId, request.auth)); } catch (error) { next(error); }
   });
   app.use("/api", (_request, response) => response.status(404).json({ error: "API route not found" }));
 
