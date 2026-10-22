@@ -2,7 +2,8 @@ import express from "express";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { authenticate, requireRoles } from "./auth/middleware.js";
-import { createProject, createTask, updateTask, workspaceSnapshot } from "./store.js";
+import { workspaceSnapshot } from "./store.js";
+import { commonsSnapshot, createAidCase, getEncryptedAidDetails, voteOnAidCase } from "./commons.js";
 
 export function createApp() {
   const app = express();
@@ -16,15 +17,28 @@ export function createApp() {
   });
 
   app.get("/api/health", (_request, response) => response.json({ status: "ok", auth: "required-on-protected-routes" }));
-  app.get("/api/workspace", authenticate, requireRoles("member", "admin"), (request, response) => response.json(workspaceSnapshot(request.auth)));
-  app.post("/api/projects", authenticate, requireRoles("admin"), (request, response, next) => {
-    try { response.status(201).json(createProject(request.body, request.auth)); } catch (error) { next(error); }
+  app.get("/api/workspace", authenticate, requireRoles("member", "admin", "steward"), (request, response) => response.json(workspaceSnapshot(request.auth)));
+  app.get("/api/commons", authenticate, requireRoles("member", "admin", "steward"), (request, response) => response.json(commonsSnapshot({ subject: request.auth.claims.sub })));
+  app.post("/api/commons/cases", authenticate, requireRoles("member", "admin"), (request, response, next) => {
+    try {
+      const actor = { subject: request.auth.claims.sub, name: request.auth.claims.name || request.auth.claims.preferred_username || "Verified member" };
+      response.status(201).json(createAidCase(request.body, actor));
+    } catch (error) { next(error); }
   });
-  app.post("/api/projects/:projectId/tasks", authenticate, requireRoles("member", "admin"), (request, response, next) => {
-    try { response.status(201).json(createTask(request.params.projectId, request.body, request.auth)); } catch (error) { next(error); }
+  app.get("/api/commons/cases/:caseId/private", authenticate, requireRoles("steward"), (request, response, next) => {
+    try {
+      const actor = { roles: request.auth.roles };
+      response.json(getEncryptedAidDetails(request.params.caseId, actor));
+    } catch (error) { next(error); }
   });
-  app.patch("/api/projects/:projectId/tasks/:taskId", authenticate, requireRoles("member", "admin"), (request, response, next) => {
-    try { response.json(updateTask(request.params.projectId, request.params.taskId, request.body, request.auth)); } catch (error) { next(error); }
+  app.post("/api/commons/cases/:caseId/votes", authenticate, requireRoles("steward"), (request, response, next) => {
+    try {
+      const actor = {
+        subject: request.auth.claims.sub,
+        name: request.auth.claims.name || request.auth.claims.preferred_username || "Verified steward",
+      };
+      response.json(voteOnAidCase(request.params.caseId, request.body, actor));
+    } catch (error) { next(error); }
   });
   app.use("/api", (_request, response) => response.status(404).json({ error: "API route not found" }));
 

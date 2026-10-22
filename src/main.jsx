@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import "./style.css";
 import "./tasks.css";
+import "./commons.css";
 
 function TideCloakBootstrap() {
   const [config, setConfig] = useState(null);

@@ -1,149 +1,46 @@
 [![Built with TideCloak](https://tide.org/badges/built-with-tidecloak.svg)](https://tide.org/tidecloak?utm_source=github&utm_medium=readme&utm_campaign=unlocked)
 
-# TrustFlow
+# CommonGround
 
-TrustFlow is a secure student collaboration platform by **UIT.VUARAUMA (SGS)**. It gives student teams one polished workspace for projects, tasks and decisions while TideCloak verifies who each person is and the API independently enforces what they may do.
+CommonGround is a community-governed student support fund where private requests stay encrypted and no single steward can decide who receives help.
 
-Built with [TideCloak](https://tide.org/tidecloak?utm_source=github&utm_medium=readme&utm_campaign=unlocked), React, Vite and Express.
+Built with TideCloak, React, Vite and Express.
 
 ## 1. Vision & originality
 
-Student teams move quickly across chat threads, shared documents and informal task boards. That speed is useful, but it also makes ownership and privileged changes ambiguous. TrustFlow combines the familiar feel of a modern project workspace with a security boundary designed for real collaboration: every protected request carries a verified identity, sender-bound session proof and role from TideCloak.
-
-The prototype focuses on a working vertical slice:
-
-- TideCloak login, callback handling, session restoration and logout.
-- Dismissible first-login display-name onboarding through the user's own Account API token; no email is requested or invented.
-- Responsive overview, project board and explicit unauthorized page.
-- Admin and Member roles, read from the verified token.
-- Server-protected workspace reads, task updates and admin-only project creation.
-- An actor-bound activity trail for protected changes.
+Students often avoid asking for emergency help when one administrator can read their story and control the outcome. CommonGround lets students request small grants while a community panel decides together.
 
 ## 2. Trust constraint insight
 
-Ordinary collaboration tools often rely on the browser to hide controls, or on one backend role table that an attacker can bypass after compromising the app. In TrustFlow, client checks improve the experience but never make the authorization decision.
-
-The Express API fails closed. It validates the JWT signature against the adapter's **embedded JWK**, checks issuer and authorized party, requires a valid RFC 9449 DPoP proof for sender-bound tokens, rejects proof replay, and only then evaluates `admin` or `member` roles from the verified token. Missing configuration, missing roles, expired tokens, Bearer replay of a bound token and invalid proof details all produce 401/403 responses.
+A conventional fund puts sensitive requests and final authority in one database administrator. CommonGround encrypts the explanation in the student's TideCloak session before the API receives it. The API stores ciphertext, and only accounts with TideCloak's `commons-case` decryption permission can ask the distributed Tide network to reveal it.
 
 ## 3. Value & impact
 
-TrustFlow helps student teams coordinate work without turning one team leader or one browser session into unchecked authority. A Member can view projects and advance tasks. Only an Admin can create a project. Both operations are enforced at the API even if someone calls it directly.
-
-For judges, the concrete story is simple: sign in, advance a task as a Member, attempt the Admin URL and observe the 403 experience, then sign in as an Admin and create a project through the protected API.
+Students can seek transport, food, course-material or emergency support without making the private explanation readable to the app server. A request needs two matching votes from three independent stewards; requesters cannot vote on their own case. A split with an abstention closes without a decision.
 
 ## 4. Why TideCloak matters
 
-TideCloak supplies the identity and governed role source. TrustFlow uses the official `@tidecloak/react` SDK with strict ES256 DPoP, `useAuthCallback`, session restoration, `secureFetch`, login and logout. The resource server uses the Tide adapter's embedded JWK instead of falling back to a remote JWKS endpoint.
-
-The integration follows Raziel's official invariants:
-
-- UI role checks are presentation only; APIs enforce authorization.
-- JWTs are verified server-side against the embedded Tide key set.
-- `cnf.jkt` is not treated as sufficient: the DPoP proof, method, URL, access-token hash, issued time and one-time `jti` are verified.
-- Roles come only from the verified JWT, never from an unprotected app role table.
-
-The included replay store is in-memory and correct for this single-process demo. A multi-instance deployment must replace it with a shared atomic store such as Redis or Postgres.
+Ordinary login and API roles cannot decrypt a stored explanation. TideCloak performs encryption and decryption through its distributed network, so the application server stores no decryption key. The Express API also verifies Tide JWTs and DPoP proofs and enforces the steward quorum for decisions.
 
 ## 5. Prototype & storytelling
 
-The prototype demonstrates the security boundary rather than a fake login. Without a real Tide adapter it deliberately shows a configuration-required screen. With a configured realm, the flow is:
+Submit a synthetic request, inspect its sealed state, then sign in as stewards to reveal it through TideCloak and vote. Show that one vote leaves the request pending and the second matching vote decides it. The quorum is application logic in this prototype; it is not a custom Forseti policy, and the prototype does not move real money or connect to university records.
 
-1. Continue with TideCloak and complete the real hosted/local login.
-2. Return through `/auth/redirect`; the SDK exchanges and restores the session.
-3. Load `/api/workspace` through DPoP-aware `secureFetch`.
-4. Move a task and see a verified event appear.
-5. Visit `/admin` as a Member to see the unauthorized experience.
-6. Sign in as an Admin and create a project through an independently protected API.
+## Run locally
 
-See [docs/DEMO_VIDEO.md](docs/DEMO_VIDEO.md) for the narration and recording checklist.
+Requirements: Node.js 20+, npm, a TideCloak realm and public client. Configure redirect URI `http://localhost:5137/auth/redirect` and web origin `http://localhost:5137`.
 
-## Local development
-
-### Prerequisites
-
-- Node.js 20+ and npm.
-- A TideCloak realm and public client.
-- Realm roles: `_tide_enabled`, `member`, and `admin`.
-- Valid redirect URI: `http://localhost:5137/auth/redirect`.
-- Valid web origin: `http://localhost:5137`.
-- An exported Tide adapter containing `realm`, `resource`, `auth-server-url`, Tide metadata and an embedded `jwk.keys` array.
-
-Before creating a Tide realm, Tide's official workflow requires the human operator to provide the licence email, accept the [Tide Terms & Conditions](https://tide.org/legal), and choose local Docker or hosted Skycloak. Each operator must make those decisions for their own deployment.
-
-### Install and configure
+Create realm roles `member` and `steward` (stewards also need `member`), plus Tide encryption roles `_tide_commons-case.selfencrypt` and `_tide_commons-case.selfdecrypt`. Assign encryption roles only to intended users. Copy the exported public adapter to the ignored path `public/tidecloak.json`; do not commit secrets.
 
 ```powershell
-Set-Location "D:\code\RMIT-C2"
-npm.cmd install
-# Only needed on a new machine/deployment:
-Copy-Item "C:\path\to\exported\tidecloak.json" ".\public\tidecloak.json"
-```
-
-`public/tidecloak.json` is intentionally gitignored. Never add a confidential client secret to the browser adapter.
-
-Run the API and Vite app in separate terminals:
-
-```powershell
+npm.cmd ci
 npm.cmd run dev:api
 ```
+
+In a second terminal:
 
 ```powershell
 npm.cmd run dev
 ```
 
-Open `http://localhost:5137`.
-
-### TideCloak development infrastructure
-
-The development instance used for the 2026-10-22 verification runs the official `tideorg/tidecloak-dev:latest` image at `http://localhost:8080`, with realm `trustflow` and public client `trustflow-client`. Its H2 data, master-admin credential and exported adapter are local-only and gitignored.
-
-For a fresh environment, provide your own licence email and Terms acceptance, then follow Raziel's current `start-tidecloak-dev` / bootstrap playbook. The underlying local container shape is:
-
-```powershell
-docker run --name trustflow-tidecloak -p 8080:8080 `
-  -e KC_BOOTSTRAP_ADMIN_USERNAME=admin `
-  -e KC_BOOTSTRAP_ADMIN_PASSWORD="<set-outside-source-control>" `
-  tideorg/tidecloak-dev:latest
-```
-
-Do not reuse the placeholder password, commit it, or assume a locally created realm can later be moved to hosted Skycloak. Export the adapter only after IGA and the required roles are configured.
-
-## Security architecture
-
-```text
-Browser / @tidecloak/react
-  ├─ TideCloak login + callback + session restoration
-  ├─ strict DPoP key and proof generation
-  └─ secureFetch
-          │ access token + DPoP proof
-          ▼
-Express API
-  ├─ local JWT verification using adapter.jwk
-  ├─ issuer + azp + time checks
-  ├─ DPoP signature, cnf.jkt, ath, htm, htu, iat, jti checks
-  ├─ admin/member role enforcement
-  └─ project/task operation + audit event
-```
-
-HTTP outcomes are intentional: `401` means identity or proof could not be verified; `403` means the verified identity lacks the required role; validation errors return `400`.
-
-## Quality checks
-
-```powershell
-npm.cmd run check
-```
-
-The check runs ESLint, Node security/authorization tests and the production Vite build. Tide Doctor also validates the local adapter, embedded key, signed origin, DPoP provider/relay, server verification and secret hygiene.
-
-## Current submission status
-
-- Source application: implemented on branch `codex/trustflow-tidecloak`.
-- Automated checks: ESLint, 8 Node tests, production build, npm audit and Tide Doctor passed on 2026-10-22.
-- TideCloak local verification: realm `trustflow`, client `trustflow-client`, IGA and admin Tide account linking completed. The exported adapter and Docker data remain intentionally local and gitignored.
-- Authorization status: the linked account has effective `member`; its TrustFlow `admin` grant is an IGA change request awaiting explicit Tide approval in the Tide console.
-- Repository source: pushed to `origin/codex/trustflow-tidecloak` (implementation commit `e3f299b`) on 2026-10-22. This branch is not claimed as merged into `main` or formally submitted to the organizer.
-- Final demo video target: `Video.mp4` in the repository root. The existing file predates TrustFlow work and must be replaced with a newly recorded TrustFlow demo before submission; it is not claimed as the final recording.
-
-## Team
-
-**UIT.VUARAUMA** · SGS Campus · RMIT Hackathon 2026 Challenge 2
+Open `http://localhost:5137`. Run verification with `npm.cmd run check`.
