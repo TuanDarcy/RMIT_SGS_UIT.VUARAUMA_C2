@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useTideCloak } from "@tidecloak/react";
 
-const DISMISS_PREFIX = "trustflow.profile-onboarding.dismissed";
+const DISMISS_PREFIX = "trustcare.profile-onboarding.dismissed";
 
 export function ProfileOnboarding() {
   const tide = useTideCloak();
@@ -61,10 +61,10 @@ export function ProfileOnboarding() {
   return (
     <div className="onboarding-backdrop" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
       <form className="onboarding-card" onSubmit={save}>
-        <span className="onboarding-mark">TF</span>
+        <span className="onboarding-mark">TC</span>
         <p className="eyebrow">ONE QUICK DETAIL</p>
-        <h2 id="onboarding-title">Welcome to TrustFlow</h2>
-        <p>Choose the name teammates will see. This is optional and we do not ask for your email.</p>
+        <h2 id="onboarding-title">Welcome to TrustCare</h2>
+        <p>Choose the display name your care team will see. This is optional and we do not ask for your email.</p>
         <label htmlFor="display-name">Display name</label>
         <input
           id="display-name"

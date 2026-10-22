@@ -1,65 +1,93 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { cancelApproval, createApproval, createProject, createTask, decideApproval, deleteProject, deleteTask, resetStoreForTests, updateTask, workspaceSnapshot } from "./store.js";
+import {
+  createAccessRequest,
+  createAssignment,
+  createMedicalRecord,
+  decideAccessRequest,
+  deleteAssignment,
+  deleteMedicalRecord,
+  resetStoreForTests,
+  updateMedicalRecord,
+  workspaceSnapshot,
+} from "./store.js";
 
-const admin = { claims: { sub: "admin-1", name: "Admin User" }, roles: ["admin", "member"] };
-const member = { claims: { sub: "member-1", name: "Member User" }, roles: ["member"] };
-const otherMember = { claims: { sub: "member-2", name: "Other Member" }, roles: ["member"] };
+const patient = { claims: { sub: "patient-1", name: "Patient One" }, roles: ["patient"] };
+const otherPatient = { claims: { sub: "patient-2", name: "Patient Two" }, roles: ["patient"] };
+const legacyMember = { claims: { sub: "legacy-member", name: "Legacy Patient" }, roles: ["member"] };
+const doctor = { claims: { sub: "doctor-1", name: "Doctor One" }, roles: ["doctor"] };
+const unassignedDoctor = { claims: { sub: "doctor-2", name: "Doctor Two" }, roles: ["doctor"] };
+const admin = { claims: { sub: "admin-1", name: "Admin User" }, roles: ["admin"] };
 
 test.afterEach(resetStoreForTests);
 
-test("admin can create a project while member cannot", () => {
-  assert.equal(createProject({ name: "Secure Demo", summary: "Prepare the final secure demonstration." }, admin).name, "Secure Demo");
-  assert.throws(() => createProject({ name: "No", summary: "Member cannot create this project." }, member), { status: 403 });
+test("patient sees only their own profile and records", () => {
+  const snapshot = workspaceSnapshot(patient);
+  assert.deepEqual(snapshot.patients.map((item) => item.id), ["PT-1001"]);
+  assert.ok(snapshot.records.every((item) => item.patientId === "PT-1001"));
+  assert.equal(snapshot.user.primaryRole, "patient");
 });
 
-test("member can advance an existing task", () => {
-  const updated = updateTask("project-campus", "task-prototype", { status: "done" }, member);
-  assert.equal(updated.status, "done");
-  assert.equal(workspaceSnapshot(member).audit[0].action, "Task advanced");
+test("legacy member is safely mapped to a patient profile", () => {
+  const snapshot = workspaceSnapshot(legacyMember);
+  assert.equal(snapshot.user.primaryRole, "patient");
+  assert.equal(snapshot.patients.length, 1);
+  assert.equal(snapshot.patients[0].ownerSubject, "legacy-member");
 });
 
-test("member can create a validated task", () => {
-  const task = createTask("project-campus", { title: "Prepare usability test", priority: "medium" }, member);
-  assert.equal(task.status, "todo");
-  assert.equal(task.assignee, "Member User");
+test("assigned doctor sees only assigned patients", () => {
+  const snapshot = workspaceSnapshot(doctor);
+  assert.deepEqual(snapshot.patients.map((item) => item.id), ["PT-1001"]);
+  assert.ok(snapshot.records.every((item) => item.patientId === "PT-1001"));
 });
 
-test("invalid task state fails closed", () => {
-  assert.throws(() => updateTask("project-campus", "task-prototype", { status: "deleted" }, member), { status: 400 });
+test("admin receives directory metadata but no clinical records", () => {
+  const snapshot = workspaceSnapshot(admin);
+  assert.equal(snapshot.patients.length, 2);
+  assert.equal(snapshot.records.length, 0);
+  assert.ok(snapshot.patients.every((item) => !("ownerSubject" in item)));
 });
 
-test("member can delete a task and the action is audited", () => {
-  const task = createTask("project-campus", { title: "Disposable demo task", priority: "low" }, member);
-  assert.equal(deleteTask("project-campus", task.id, member).id, task.id);
-  assert.equal(workspaceSnapshot(member).audit[0].action, "Task deleted");
-  assert.throws(() => deleteTask("project-campus", task.id, member), { status: 404 });
+test("assigned doctor can create and update a medical record", () => {
+  const record = createMedicalRecord("PT-1001", { title: "Follow-up visit", clinicalNote: "Patient recovery is progressing as expected.", type: "consultation", status: "draft" }, doctor);
+  assert.equal(record.patientId, "PT-1001");
+  const updated = updateMedicalRecord("PT-1001", record.id, { status: "final" }, doctor);
+  assert.equal(updated.status, "final");
 });
 
-test("only an admin can delete a project", () => {
-  const project = createProject({ name: "Temporary Project", summary: "Created to verify protected deletion." }, admin);
-  assert.throws(() => deleteProject(project.id, member), { status: 403 });
-  assert.equal(deleteProject(project.id, admin).id, project.id);
-  assert.equal(workspaceSnapshot(admin).audit[0].action, "Project deleted");
+test("unassigned doctor cannot read through workspace or mutate another patient", () => {
+  assert.equal(workspaceSnapshot(unassignedDoctor).patients.length, 0);
+  assert.throws(() => createMedicalRecord("PT-1001", { title: "Forbidden record", clinicalNote: "This operation must be blocked by assignment checks.", type: "diagnosis" }, unassignedDoctor), { status: 403 });
+  assert.throws(() => updateMedicalRecord("PT-1001", "MR-2001", { title: "Forbidden update" }, unassignedDoctor), { status: 403 });
 });
 
-test("member can request approval and admin can decide it", () => {
-  const approval = createApproval({ title: "Release project", description: "Publish the reviewed project to the judges.", risk: "high" }, member);
-  assert.equal(approval.status, "pending");
-  assert.throws(() => decideApproval(approval.id, { decision: "approved" }, member), { status: 403 });
-  const decided = decideApproval(approval.id, { decision: "approved" }, admin);
-  assert.equal(decided.status, "approved");
-  assert.equal(decided.decidedBy.subject, "admin-1");
-  assert.throws(() => decideApproval(approval.id, { decision: "rejected" }, admin), { status: 409 });
+test("only draft records may be deleted", () => {
+  assert.equal(deleteMedicalRecord("PT-1001", "MR-2002", doctor).id, "MR-2002");
+  assert.throws(() => deleteMedicalRecord("PT-1001", "MR-2001", doctor), { status: 409 });
 });
 
-test("requester cannot approve their own change", () => {
-  const approval = createApproval({ title: "Admin-authored change", description: "Verify separation between requesting and deciding.", risk: "medium" }, admin);
-  assert.throws(() => decideApproval(approval.id, { decision: "approved" }, admin), { status: 403 });
+test("doctor can request access but cannot approve it", () => {
+  const request = createAccessRequest({ patientId: "PT-1002", reason: "A specialist consultation has been requested by the patient." }, unassignedDoctor);
+  assert.equal(request.status, "pending");
+  assert.throws(() => decideAccessRequest(request.id, { decision: "approved" }, unassignedDoctor), { status: 403 });
 });
 
-test("only requester or admin can cancel a pending request", () => {
-  const approval = createApproval({ title: "Cancel test", description: "Verify ownership checks for cancellation.", risk: "low" }, member);
-  assert.throws(() => cancelApproval(approval.id, otherMember), { status: 403 });
-  assert.equal(cancelApproval(approval.id, member).id, approval.id);
+test("only the matching patient can decide an access request", () => {
+  const request = createAccessRequest({ patientId: "PT-1002", reason: "Review recent results and coordinate the next appointment." }, unassignedDoctor);
+  assert.throws(() => decideAccessRequest(request.id, { decision: "approved" }, patient), { status: 403 });
+  assert.equal(decideAccessRequest(request.id, { decision: "approved" }, otherPatient).status, "approved");
+  assert.deepEqual(workspaceSnapshot(unassignedDoctor).patients.map((item) => item.id), ["PT-1002"]);
+});
+
+test("admin can create and remove a doctor assignment", () => {
+  const assignment = createAssignment({ patientId: "PT-1002", doctorSubject: "doctor-2", doctorName: "Doctor Two" }, admin);
+  assert.equal(workspaceSnapshot(unassignedDoctor).patients[0].id, "PT-1002");
+  assert.equal(deleteAssignment(assignment.id, admin).id, assignment.id);
+  assert.equal(workspaceSnapshot(unassignedDoctor).patients.length, 0);
+});
+
+test("patient and doctor cannot perform admin assignment operations", () => {
+  const input = { patientId: "PT-1002", doctorSubject: "doctor-2", doctorName: "Doctor Two" };
+  assert.throws(() => createAssignment(input, patient), { status: 403 });
+  assert.throws(() => createAssignment(input, doctor), { status: 403 });
 });

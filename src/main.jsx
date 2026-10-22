@@ -24,7 +24,7 @@ function TideCloakBootstrap() {
   }, []);
 
   if (error) return <App configurationError={error} />;
-  if (!config) return <main className="boot-screen"><div className="pulse-logo">TF</div><p>Establishing a secure workspace…</p></main>;
+  if (!config) return <main className="boot-screen"><div className="pulse-logo">TC</div><p>Establishing a protected health workspace…</p></main>;
   return <TideCloakContextProvider config={config}><App /></TideCloakContextProvider>;
 }
 

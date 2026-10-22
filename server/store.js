@@ -1,148 +1,206 @@
 import { randomUUID } from "node:crypto";
 
-const colors = ["violet", "coral", "mint"];
-const state = {
-  projects: [
-    { id: "project-campus", name: "Campus Connect", summary: "Make student communities easier to discover and join.", color: "violet", members: ["An", "Minh", "Linh"], tasks: [
-      { id: "task-research", title: "Validate student pain points", status: "done", priority: "high", assignee: "Linh" },
-      { id: "task-prototype", title: "Prototype discovery flow", status: "in-progress", priority: "high", assignee: "Minh" },
-      { id: "task-copy", title: "Polish onboarding copy", status: "todo", priority: "medium", assignee: "An" },
-    ] },
-    { id: "project-trust", name: "TrustFlow Launch", summary: "Deliver the secure collaboration vertical slice.", color: "coral", members: ["Tuấn", "An", "Minh"], tasks: [
-      { id: "task-auth", title: "Wire TideCloak authentication", status: "done", priority: "high", assignee: "Tuấn" },
-      { id: "task-api", title: "Verify JWT and DPoP at API", status: "in-progress", priority: "high", assignee: "An" },
-      { id: "task-demo", title: "Record judge demo", status: "todo", priority: "medium", assignee: "Minh" },
-    ] },
+const allowedRecordStatuses = new Set(["draft", "final"]);
+const allowedRecordTypes = new Set(["consultation", "diagnosis", "prescription", "lab-result"]);
+
+const initialState = {
+  patients: [
+    { id: "PT-1001", ownerSubject: "patient-1", displayName: "Nguyen Minh Anh", dateOfBirth: "2001-08-14", bloodType: "O+", allergies: ["Penicillin"], emergencyContact: "0900 000 001" },
+    { id: "PT-1002", ownerSubject: "patient-2", displayName: "Tran Gia Han", dateOfBirth: "1999-03-22", bloodType: "A+", allergies: [], emergencyContact: "0900 000 002" },
   ],
-  approvals: [
-    {
-      id: "approval-demo",
-      title: "Publish the final demo",
-      description: "Approve the reviewed recording before it is attached to the submission.",
-      risk: "high",
-      status: "pending",
-      requestedBy: { subject: "member-demo", name: "Minh" },
-      createdAt: new Date(Date.now() - 1800000).toISOString(),
-      decidedBy: null,
-      decidedAt: null,
-    },
+  records: [
+    { id: "MR-2001", patientId: "PT-1001", doctorSubject: "doctor-1", doctorName: "Dr. Le Thanh", type: "consultation", title: "Annual health review", clinicalNote: "Routine examination completed. Vital signs are within the expected range.", status: "final", recordedAt: "2026-10-18T08:30:00.000Z", updatedAt: "2026-10-18T08:30:00.000Z" },
+    { id: "MR-2002", patientId: "PT-1001", doctorSubject: "doctor-1", doctorName: "Dr. Le Thanh", type: "prescription", title: "Seasonal allergy care", clinicalNote: "Non-drowsy antihistamine recommended as needed. Review if symptoms persist.", status: "draft", recordedAt: "2026-10-20T03:15:00.000Z", updatedAt: "2026-10-20T03:15:00.000Z" },
+  ],
+  assignments: [
+    { id: "AS-3001", patientId: "PT-1001", doctorSubject: "doctor-1", doctorName: "Dr. Le Thanh", createdAt: "2026-10-17T04:00:00.000Z" },
+  ],
+  accessRequests: [
+    { id: "AR-4001", patientId: "PT-1002", doctorSubject: "doctor-1", doctorName: "Dr. Le Thanh", reason: "Follow-up consultation and care coordination.", status: "pending", createdAt: "2026-10-21T06:30:00.000Z", decidedAt: null },
   ],
   audit: [
-    { id: "audit-1", action: "Workspace secured", detail: "Protected operations require a verified TideCloak identity.", at: new Date().toISOString() },
-    { id: "audit-2", action: "Role boundary enabled", detail: "Admin and Member permissions are enforced at the API.", at: new Date(Date.now() - 3600000).toISOString() },
+    { id: "AU-5001", subject: "patient-1", action: "Medical record viewed", detail: "Patient opened their own protected record timeline.", at: "2026-10-21T09:05:00.000Z" },
+    { id: "AU-5002", subject: "doctor-1", action: "Consent requested", detail: "Dr. Le Thanh requested access to patient PT-1002.", at: "2026-10-21T06:30:00.000Z" },
   ],
 };
-const baseline = structuredClone(state);
+
+const state = structuredClone(initialState);
+
+function appRole(auth) {
+  if (auth.roles.includes("admin")) return "admin";
+  if (auth.roles.includes("doctor")) return "doctor";
+  if (auth.roles.some((role) => role === "patient" || role === "member")) return "patient";
+  throw Object.assign(new Error("Patient, Doctor, or Admin role required"), { status: 403 });
+}
+
+function actorName(auth) {
+  return auth.claims.name || auth.claims.preferred_username || auth.claims.sub;
+}
+
+function fail(message, status) {
+  throw Object.assign(new Error(message), { status });
+}
+
+function findPatient(patientId) {
+  const patient = state.patients.find((item) => item.id === patientId);
+  if (!patient) fail("Patient not found", 404);
+  return patient;
+}
+
+function ensurePatientProfile(auth) {
+  let patient = state.patients.find((item) => item.ownerSubject === auth.claims.sub);
+  if (patient) return patient;
+  const suffix = String(state.patients.length + 1001).padStart(4, "0");
+  patient = { id: `PT-${suffix}`, ownerSubject: auth.claims.sub, displayName: actorName(auth), dateOfBirth: "Not provided", bloodType: "Unknown", allergies: [], emergencyContact: "Not provided" };
+  state.patients.push(patient);
+  state.audit.unshift({ id: randomUUID(), subject: auth.claims.sub, action: "Patient profile created", detail: `${patient.id} was linked to a verified TideCloak identity.`, at: new Date().toISOString() });
+  return patient;
+}
+
+function isAssigned(patientId, doctorSubject) {
+  return state.assignments.some((item) => item.patientId === patientId && item.doctorSubject === doctorSubject);
+}
+
+function assertAssignedDoctor(patientId, auth) {
+  if (appRole(auth) !== "doctor" || !isAssigned(patientId, auth.claims.sub)) fail("You are not assigned to this patient", 403);
+}
+
+function visibleAudit(auth, role, patientIds) {
+  if (role === "admin") return state.audit.filter((item) => item.action.includes("assignment") || item.action.includes("Consent"));
+  if (role === "patient") return state.audit.filter((item) => item.subject === auth.claims.sub);
+  return state.audit.filter((item) => item.subject === auth.claims.sub || patientIds.some((id) => item.detail.includes(id)));
+}
 
 export function workspaceSnapshot(auth) {
-  const claims = auth.claims;
-  const name = claims.name || claims.preferred_username || "Verified member";
-  return { user: { subject: claims.sub, name, firstName: name.split(/\s+/)[0], roles: auth.roles.filter((role) => ["admin", "member"].includes(role)), primaryRole: auth.roles.includes("admin") ? "admin" : "member" }, projects: structuredClone(state.projects), approvals: structuredClone(state.approvals), audit: structuredClone(state.audit) };
+  const role = appRole(auth);
+  const name = actorName(auth);
+  let patients;
+  let records;
+  let accessRequests;
+
+  if (role === "patient") {
+    const patient = ensurePatientProfile(auth);
+    patients = [patient];
+    records = state.records.filter((item) => item.patientId === patient.id);
+    accessRequests = state.accessRequests.filter((item) => item.patientId === patient.id);
+  } else if (role === "doctor") {
+    const patientIds = state.assignments.filter((item) => item.doctorSubject === auth.claims.sub).map((item) => item.patientId);
+    patients = state.patients.filter((item) => patientIds.includes(item.id));
+    records = state.records.filter((item) => patientIds.includes(item.patientId));
+    accessRequests = state.accessRequests.filter((item) => item.doctorSubject === auth.claims.sub);
+  } else {
+    patients = state.patients.map(({ ownerSubject: _ownerSubject, ...patient }) => patient);
+    records = [];
+    accessRequests = state.accessRequests;
+  }
+
+  const patientIds = patients.map((item) => item.id);
+  return {
+    user: { subject: auth.claims.sub, name, firstName: name.split(/\s+/)[0], roles: [role], primaryRole: role },
+    patients: structuredClone(patients),
+    records: structuredClone(records),
+    assignments: role === "admin" ? structuredClone(state.assignments) : [],
+    accessRequests: structuredClone(accessRequests),
+    audit: structuredClone(visibleAudit(auth, role, patientIds)),
+  };
 }
 
-export function createProject(input, auth) {
-  if (!auth.roles.includes("admin")) throw Object.assign(new Error("Admin role required"), { status: 403 });
-  const name = String(input.name || "").trim();
-  const summary = String(input.summary || "").trim();
-  if (name.length < 3 || name.length > 60 || summary.length < 10 || summary.length > 180) throw Object.assign(new Error("Project name or purpose is invalid"), { status: 400 });
-  const project = { id: randomUUID(), name, summary, color: colors[state.projects.length % colors.length], members: [auth.claims.name || auth.claims.preferred_username || "Admin"], tasks: [] };
-  state.projects.push(project);
-  state.audit.unshift({ id: randomUUID(), action: "Project created", detail: `${project.name} was created by ${project.members[0]}.`, at: new Date().toISOString() });
-  return structuredClone(project);
-}
-
-export function updateTask(projectId, taskId, input, auth) {
-  if (!auth.roles.some((role) => role === "admin" || role === "member")) throw Object.assign(new Error("Member role required"), { status: 403 });
-  const project = state.projects.find((item) => item.id === projectId);
-  const task = project?.tasks.find((item) => item.id === taskId);
-  if (!task) throw Object.assign(new Error("Task not found"), { status: 404 });
-  if (!new Set(["todo", "in-progress", "done"]).has(input.status)) throw Object.assign(new Error("Invalid task status"), { status: 400 });
-  task.status = input.status;
-  const actor = auth.claims.name || auth.claims.preferred_username || auth.claims.sub;
-  state.audit.unshift({ id: randomUUID(), action: "Task advanced", detail: `${actor} moved “${task.title}” to ${task.status}.`, at: new Date().toISOString() });
-  return structuredClone(task);
-}
-
-export function createTask(projectId, input, auth) {
-  if (!auth.roles.some((role) => role === "admin" || role === "member")) throw Object.assign(new Error("Member role required"), { status: 403 });
-  const project = state.projects.find((item) => item.id === projectId);
-  if (!project) throw Object.assign(new Error("Project not found"), { status: 404 });
+export function createMedicalRecord(patientId, input, auth) {
+  findPatient(patientId);
+  assertAssignedDoctor(patientId, auth);
   const title = String(input.title || "").trim();
-  const priority = String(input.priority || "medium");
-  if (title.length < 3 || title.length > 100 || !new Set(["low", "medium", "high"]).has(priority)) throw Object.assign(new Error("Task title or priority is invalid"), { status: 400 });
-  const actor = auth.claims.name || auth.claims.preferred_username || auth.claims.sub;
-  const task = { id: randomUUID(), title, status: "todo", priority, assignee: actor };
-  project.tasks.push(task);
-  state.audit.unshift({ id: randomUUID(), action: "Task created", detail: `${actor} added “${task.title}” to ${project.name}.`, at: new Date().toISOString() });
-  return structuredClone(task);
+  const clinicalNote = String(input.clinicalNote || "").trim();
+  const type = String(input.type || "consultation");
+  const status = String(input.status || "draft");
+  if (title.length < 3 || title.length > 100 || clinicalNote.length < 10 || clinicalNote.length > 1000 || !allowedRecordTypes.has(type) || !allowedRecordStatuses.has(status)) fail("Medical record fields are invalid", 400);
+  const now = new Date().toISOString();
+  const record = { id: `MR-${randomUUID()}`, patientId, doctorSubject: auth.claims.sub, doctorName: actorName(auth), type, title, clinicalNote, status, recordedAt: now, updatedAt: now };
+  state.records.unshift(record);
+  state.audit.unshift({ id: randomUUID(), subject: auth.claims.sub, action: "Medical record created", detail: `${record.id} was added to ${patientId}.`, at: now });
+  return structuredClone(record);
 }
 
-export function deleteTask(projectId, taskId, auth) {
-  if (!auth.roles.some((role) => role === "admin" || role === "member")) throw Object.assign(new Error("Member role required"), { status: 403 });
-  const project = state.projects.find((item) => item.id === projectId);
-  if (!project) throw Object.assign(new Error("Project not found"), { status: 404 });
-  const taskIndex = project.tasks.findIndex((item) => item.id === taskId);
-  if (taskIndex === -1) throw Object.assign(new Error("Task not found"), { status: 404 });
-  const [task] = project.tasks.splice(taskIndex, 1);
-  const actor = auth.claims.name || auth.claims.preferred_username || auth.claims.sub;
-  state.audit.unshift({ id: randomUUID(), action: "Task deleted", detail: `${actor} deleted “${task.title}” from ${project.name}.`, at: new Date().toISOString() });
-  return structuredClone(task);
+export function updateMedicalRecord(patientId, recordId, input, auth) {
+  findPatient(patientId);
+  assertAssignedDoctor(patientId, auth);
+  const record = state.records.find((item) => item.id === recordId && item.patientId === patientId);
+  if (!record) fail("Medical record not found", 404);
+  const title = String(input.title ?? record.title).trim();
+  const clinicalNote = String(input.clinicalNote ?? record.clinicalNote).trim();
+  const type = String(input.type ?? record.type);
+  const status = String(input.status ?? record.status);
+  if (title.length < 3 || title.length > 100 || clinicalNote.length < 10 || clinicalNote.length > 1000 || !allowedRecordTypes.has(type) || !allowedRecordStatuses.has(status)) fail("Medical record fields are invalid", 400);
+  Object.assign(record, { title, clinicalNote, type, status, updatedAt: new Date().toISOString() });
+  state.audit.unshift({ id: randomUUID(), subject: auth.claims.sub, action: "Medical record updated", detail: `${record.id} in ${patientId} was updated.`, at: record.updatedAt });
+  return structuredClone(record);
 }
 
-export function deleteProject(projectId, auth) {
-  if (!auth.roles.includes("admin")) throw Object.assign(new Error("Admin role required"), { status: 403 });
-  const projectIndex = state.projects.findIndex((item) => item.id === projectId);
-  if (projectIndex === -1) throw Object.assign(new Error("Project not found"), { status: 404 });
-  const [project] = state.projects.splice(projectIndex, 1);
-  const actor = auth.claims.name || auth.claims.preferred_username || auth.claims.sub;
-  state.audit.unshift({ id: randomUUID(), action: "Project deleted", detail: `${actor} deleted ${project.name}.`, at: new Date().toISOString() });
-  return structuredClone(project);
+export function deleteMedicalRecord(patientId, recordId, auth) {
+  findPatient(patientId);
+  assertAssignedDoctor(patientId, auth);
+  const index = state.records.findIndex((item) => item.id === recordId && item.patientId === patientId);
+  if (index === -1) fail("Medical record not found", 404);
+  if (state.records[index].status !== "draft") fail("Only draft records can be deleted", 409);
+  const [record] = state.records.splice(index, 1);
+  state.audit.unshift({ id: randomUUID(), subject: auth.claims.sub, action: "Draft record deleted", detail: `${record.id} was removed from ${patientId}.`, at: new Date().toISOString() });
+  return structuredClone(record);
 }
 
-export function createApproval(input, auth) {
-  if (!auth.roles.some((role) => role === "admin" || role === "member")) throw Object.assign(new Error("Member role required"), { status: 403 });
-  const title = String(input.title || "").trim();
-  const description = String(input.description || "").trim();
-  const risk = String(input.risk || "medium");
-  if (title.length < 3 || title.length > 80 || description.length < 10 || description.length > 240 || !new Set(["low", "medium", "high"]).has(risk)) throw Object.assign(new Error("Approval request is invalid"), { status: 400 });
-  const requester = { subject: auth.claims.sub, name: auth.claims.name || auth.claims.preferred_username || auth.claims.sub };
-  const approval = { id: randomUUID(), title, description, risk, status: "pending", requestedBy: requester, createdAt: new Date().toISOString(), decidedBy: null, decidedAt: null };
-  state.approvals.unshift(approval);
-  state.audit.unshift({ id: randomUUID(), action: "Approval requested", detail: `${requester.name} requested approval for “${approval.title}”.`, at: new Date().toISOString() });
-  return structuredClone(approval);
+export function createAccessRequest(input, auth) {
+  if (appRole(auth) !== "doctor") fail("Doctor role required", 403);
+  const patientId = String(input.patientId || "").trim();
+  const reason = String(input.reason || "").trim();
+  findPatient(patientId);
+  if (isAssigned(patientId, auth.claims.sub)) fail("You already have access to this patient", 409);
+  if (reason.length < 10 || reason.length > 240) fail("Access reason must be between 10 and 240 characters", 400);
+  if (state.accessRequests.some((item) => item.patientId === patientId && item.doctorSubject === auth.claims.sub && item.status === "pending")) fail("A pending request already exists", 409);
+  const request = { id: `AR-${randomUUID()}`, patientId, doctorSubject: auth.claims.sub, doctorName: actorName(auth), reason, status: "pending", createdAt: new Date().toISOString(), decidedAt: null };
+  state.accessRequests.unshift(request);
+  state.audit.unshift({ id: randomUUID(), subject: auth.claims.sub, action: "Consent requested", detail: `${request.doctorName} requested access to patient ${patientId}.`, at: request.createdAt });
+  return structuredClone(request);
 }
 
-export function decideApproval(approvalId, input, auth) {
-  if (!auth.roles.includes("admin")) throw Object.assign(new Error("Admin role required"), { status: 403 });
-  const approval = state.approvals.find((item) => item.id === approvalId);
-  if (!approval) throw Object.assign(new Error("Approval request not found"), { status: 404 });
-  if (approval.status !== "pending") throw Object.assign(new Error("Approval request has already been decided"), { status: 409 });
-  if (approval.requestedBy.subject === auth.claims.sub) throw Object.assign(new Error("Requesters cannot approve their own change"), { status: 403 });
+export function decideAccessRequest(requestId, input, auth) {
+  if (appRole(auth) !== "patient") fail("Only the patient can decide this request", 403);
+  const patient = ensurePatientProfile(auth);
+  const request = state.accessRequests.find((item) => item.id === requestId);
+  if (!request) fail("Access request not found", 404);
+  if (request.patientId !== patient.id) fail("This request belongs to another patient", 403);
+  if (request.status !== "pending") fail("Access request has already been decided", 409);
   const decision = String(input.decision || "");
-  if (!new Set(["approved", "rejected"]).has(decision)) throw Object.assign(new Error("Decision must be approved or rejected"), { status: 400 });
-  const decisionMaker = { subject: auth.claims.sub, name: auth.claims.name || auth.claims.preferred_username || auth.claims.sub };
-  approval.status = decision;
-  approval.decidedBy = decisionMaker;
-  approval.decidedAt = new Date().toISOString();
-  state.audit.unshift({ id: randomUUID(), action: decision === "approved" ? "Change approved" : "Change rejected", detail: `${decisionMaker.name} ${decision === "approved" ? "approved" : "rejected"} “${approval.title}”.`, at: approval.decidedAt });
-  return structuredClone(approval);
+  if (!new Set(["approved", "rejected"]).has(decision)) fail("Decision must be approved or rejected", 400);
+  request.status = decision;
+  request.decidedAt = new Date().toISOString();
+  if (decision === "approved" && !isAssigned(request.patientId, request.doctorSubject)) {
+    state.assignments.push({ id: `AS-${randomUUID()}`, patientId: request.patientId, doctorSubject: request.doctorSubject, doctorName: request.doctorName, createdAt: request.decidedAt });
+  }
+  state.audit.unshift({ id: randomUUID(), subject: auth.claims.sub, action: `Consent ${decision}`, detail: `${patient.id} ${decision} access for ${request.doctorName}.`, at: request.decidedAt });
+  return structuredClone(request);
 }
 
-export function cancelApproval(approvalId, auth) {
-  const approvalIndex = state.approvals.findIndex((item) => item.id === approvalId);
-  if (approvalIndex === -1) throw Object.assign(new Error("Approval request not found"), { status: 404 });
-  const approval = state.approvals[approvalIndex];
-  const canCancel = auth.roles.includes("admin") || approval.requestedBy.subject === auth.claims.sub;
-  if (!canCancel) throw Object.assign(new Error("Only the requester or an Admin can cancel this request"), { status: 403 });
-  if (approval.status !== "pending") throw Object.assign(new Error("Only pending requests can be cancelled"), { status: 409 });
-  state.approvals.splice(approvalIndex, 1);
-  const actor = auth.claims.name || auth.claims.preferred_username || auth.claims.sub;
-  state.audit.unshift({ id: randomUUID(), action: "Approval cancelled", detail: `${actor} cancelled “${approval.title}”.`, at: new Date().toISOString() });
-  return structuredClone(approval);
+export function createAssignment(input, auth) {
+  if (appRole(auth) !== "admin") fail("Admin role required", 403);
+  const patientId = String(input.patientId || "").trim();
+  const doctorSubject = String(input.doctorSubject || "").trim();
+  const doctorName = String(input.doctorName || "").trim();
+  findPatient(patientId);
+  if (doctorSubject.length < 3 || doctorName.length < 2 || doctorName.length > 80) fail("Doctor assignment is invalid", 400);
+  if (isAssigned(patientId, doctorSubject)) fail("Doctor is already assigned to this patient", 409);
+  const assignment = { id: `AS-${randomUUID()}`, patientId, doctorSubject, doctorName, createdAt: new Date().toISOString() };
+  state.assignments.push(assignment);
+  state.audit.unshift({ id: randomUUID(), subject: auth.claims.sub, action: "Doctor assignment created", detail: `${doctorName} was assigned to ${patientId}.`, at: assignment.createdAt });
+  return structuredClone(assignment);
+}
+
+export function deleteAssignment(assignmentId, auth) {
+  if (appRole(auth) !== "admin") fail("Admin role required", 403);
+  const index = state.assignments.findIndex((item) => item.id === assignmentId);
+  if (index === -1) fail("Assignment not found", 404);
+  const [assignment] = state.assignments.splice(index, 1);
+  state.audit.unshift({ id: randomUUID(), subject: auth.claims.sub, action: "Doctor assignment removed", detail: `${assignment.doctorName} was removed from ${assignment.patientId}.`, at: new Date().toISOString() });
+  return structuredClone(assignment);
 }
 
 export function resetStoreForTests() {
-  state.projects = structuredClone(baseline.projects);
-  state.approvals = structuredClone(baseline.approvals);
-  state.audit = structuredClone(baseline.audit);
+  Object.assign(state, structuredClone(initialState));
 }
