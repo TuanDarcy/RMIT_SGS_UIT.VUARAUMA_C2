@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/patch-tidecloak-third-party-check.mjs",
     "dev": "vite",
     "dev:api": "node --watch server/index.js",
     "dev:tidecloak-proxy": "node server/tidecloak-proxy.js",

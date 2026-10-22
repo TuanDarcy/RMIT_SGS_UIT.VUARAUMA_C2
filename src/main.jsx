@@ -19,7 +19,7 @@ function TideCloakBootstrap() {
         }
         return response.json();
       })
-      .then((adapter) => setConfig({ ...adapter, useDPoP: { mode: "strict", alg: "ES256" } }))
+      .then((adapter) => setConfig({ ...adapter, checkLoginIframe: false, useDPoP: { mode: "strict", alg: "ES256" } }))
       .catch((reason) => setError(reason instanceof Error ? reason.message : String(reason)));
   }, []);
 

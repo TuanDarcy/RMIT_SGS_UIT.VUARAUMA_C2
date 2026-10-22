@@ -6,6 +6,7 @@
 - Kept React/Vite and the existing Express resource server. A framework migration would add delivery risk without improving this vertical slice.
 - Renamed the product to **TrustCare — private care, verified access** and standardized the UI on Inter with a teal/slate clinical SaaS palette and larger base text.
 - Kept official TideCloak login, callback, restoration, logout, strict ES256 DPoP, embedded-JWK JWT verification and fail-closed middleware intact.
+- Added an idempotent post-install compatibility patch for the current `@tidecloak/js` browser adapter: a third-party-cookie capability probe timeout now disables silent SSO and continues with normal redirect processing instead of wedging the authentication callback. This does not bypass JWT, DPoP or server authorization.
 - Added patient registration through the official underlying TideCloak client `register()` method. No OIDC or PKCE flow is hand-built.
 - Self-registration is Patient-only. Doctor and Admin remain governed roles; the UI never lets a user choose or elevate their own role.
 - Temporarily normalize the existing default `member` role to Patient so the linked demo account continues to work while `patient` and `doctor` realm roles wait for IGA approval.

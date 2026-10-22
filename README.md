@@ -59,6 +59,7 @@ TrustCare uses the official `@tidecloak/react` SDK and Raziel integration guidan
 - `useAuthCallback` completes the redirect and restores the session.
 - The SDK's official `register()` path opens TideCloak self-registration.
 - `secureFetch` attaches the access token and strict ES256 DPoP proof.
+- Session-status iframe monitoring is disabled for the local cross-origin setup. A small idempotent post-install compatibility patch makes a third-party-cookie probe timeout fall back to normal redirect SSO instead of preventing callback processing.
 - The server verifies JWT signature, issuer, `azp`, expiry and DPoP `cnf.jkt`, signature, `ath`, method, URL, time and one-time `jti`.
 - Protected routes enforce Patient/Doctor/Admin roles and the patient/doctor assignment independently of the UI.
 
