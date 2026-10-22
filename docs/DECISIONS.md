@@ -1,20 +1,20 @@
-# TrustFlow implementation decisions
+# TrustCare implementation decisions
 
 ## 2026-10-22
 
-- Kept the organizer's React/Vite architecture and added a small Express resource server. Migration to Next.js was unnecessary for the vertical slice.
-- Replaced the local role switcher with actual TideCloak identity and token roles. There is no demo-auth bypass.
-- Chose strict DPoP. The official relay asset is copied byte-for-byte and served with its required path rewrite and headers.
-- Treat client guards as UX only. All protected data and writes pass through server JWT, DPoP and role checks.
-- Use only the embedded adapter JWK. A missing JWK is a startup/request failure; remote discovery is not a fallback.
-- Keep demo data in memory to avoid introducing an unaudited database layer during the hackathon slice. Restarting the API resets it.
-- The in-memory DPoP replay store limits production deployment to one API process. A shared atomic store is required before horizontal scaling.
-- Bootstrapped local Docker only after the operator supplied the licence email, personally accepted Tide's Terms and selected local Docker hosting.
-- Created realm `trustflow` and public client `trustflow-client`, enabled IGA, linked the first Tide admin account, and exported the gitignored browser adapter to `public/tidecloak.json`.
-- Added `member` as a default realm role. The first account's application-level `admin` grant remains a governed IGA change request until the operator explicitly approves it.
-- Kept Tide's default sign-in branding at the operator's request.
-- Added optional in-app onboarding for a display name only. It stores the value as Keycloak `firstName` through the Account API using the user's token; it does not collect or synthesize email.
-- Completed task/project CRUD without weakening the security boundary: Members may delete tasks, while project deletion remains Admin-only and is checked by the API.
-- Added a governed approval workflow for higher-risk team decisions. A Member or Admin may request approval, only a different Admin may decide it, and only the requester or an Admin may cancel a pending request.
-- Kept approval execution explicit: this prototype records a governed decision and audit event; it does not claim to execute payments, contracts or cryptographic multi-party quorum.
-- Standardized the application on one SaaS design system: Inter typography, an indigo/slate palette, semantic colors only for status, shared form-control tokens, consistent focus states and responsive layouts. This keeps visual polish separate from authorization behavior.
+- Preserved the completed TrustFlow implementation on `codex/trustflow-final` and performed the medical-record pivot on the dedicated `codex/trustcare-medical-records` branch.
+- Kept React/Vite and the existing Express resource server. A framework migration would add delivery risk without improving this vertical slice.
+- Renamed the product to **TrustCare — private care, verified access** and standardized the UI on Inter with a teal/slate clinical SaaS palette and larger base text.
+- Kept official TideCloak login, callback, restoration, logout, strict ES256 DPoP, embedded-JWK JWT verification and fail-closed middleware intact.
+- Added patient registration through the official underlying TideCloak client `register()` method. No OIDC or PKCE flow is hand-built.
+- Self-registration is Patient-only. Doctor and Admin remain governed roles; the UI never lets a user choose or elevate their own role.
+- Temporarily normalize the existing default `member` role to Patient so the linked demo account continues to work while `patient` and `doctor` realm roles wait for IGA approval.
+- Enforce object-level authorization on the server: Patient ownership comes from verified `sub`; Doctor access requires an assignment for the requested patient ID; Admin does not receive clinical record contents by default.
+- Modelled consent separately from authorization. Doctors request access, only the matching Patient can decide it, and approval creates the care assignment used by future API checks.
+- Implemented medical record create/update/delete for assigned Doctors. Final records are immutable to deletion in the prototype; only drafts can be removed.
+- Kept synthetic, in-memory demo data to avoid collecting real health information and introducing an unaudited persistence layer under hackathon time pressure.
+- Kept the in-memory DPoP replay store for one-process demonstration only. Production scaling requires a shared atomic replay store and durable database.
+- Submitted role creation and self-registration settings through TideCloak's official Admin API. IGA correctly captured five pending governed changes; they were not bypassed or falsely reported as active.
+- Kept Tide's default sign-in branding at the operator's earlier request.
+- Kept display-name-only onboarding. No email is requested or invented by the app.
+- Treat the old root `Video.mp4` as stale evidence; never call it the TrustCare demo until a new recording has been reviewed and intentionally replaced.

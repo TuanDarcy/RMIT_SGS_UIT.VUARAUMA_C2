@@ -1,89 +1,109 @@
 [![Built with TideCloak](https://tide.org/badges/built-with-tidecloak.svg)](https://tide.org/tidecloak?utm_source=github&utm_medium=readme&utm_campaign=unlocked)
 
-# TrustFlow
+# TrustCare
 
-TrustFlow is a secure student collaboration platform by **UIT.VUARAUMA (SGS)**. It gives student teams one polished workspace for projects, tasks and decisions while TideCloak verifies who each person is and the API independently enforces what they may do.
+TrustCare is a privacy-first medical record prototype by **UIT.VUARAUMA (SGS)** for RMIT Hackathon 2026 Challenge 2. Patients control who may join their care team, doctors can work only with assigned patients, and the API verifies identity, role, sender binding and patient relationship before returning or changing protected data.
 
 Built with [TideCloak](https://tide.org/tidecloak?utm_source=github&utm_medium=readme&utm_campaign=unlocked), React, Vite and Express.
 
+> Demo safety: all names, phone numbers and clinical notes included in the source are synthetic. Do not enter real health information into this hackathon prototype.
+
 ## 1. Vision & originality
 
-Student teams move quickly across chat threads, shared documents and informal task boards. That speed is useful, but it also makes ownership and privileged changes ambiguous. TrustFlow combines the familiar feel of a modern project workspace with a security boundary designed for real collaboration: every protected request carries a verified identity, sender-bound session proof and role from TideCloak.
+Medical records are useful only when the right care team can reach them, yet access is often expressed as a broad role such as “doctor” or “admin”. TrustCare models the missing relationship: **which doctor is assigned to which patient, and did that patient consent?**
 
-The prototype focuses on a working vertical slice:
+The working vertical slice includes:
 
-- TideCloak login, callback handling, session restoration and logout.
-- Dismissible first-login display-name onboarding through the user's own Account API token; no email is requested or invented.
-- Responsive overview, project board and explicit unauthorized page.
-- Admin and Member roles, read from the verified token.
-- Complete project/task CRUD with destructive operations protected again at the API.
-- Governed approval requests: Members propose changes, a different Admin approves or rejects them, and request ownership is enforced for cancellation.
-- An actor-bound activity trail for protected changes.
+- Real TideCloak sign-in, callback handling, session restoration and logout.
+- A “Create patient account” action powered by the official TideCloak client registration method.
+- Optional display-name onboarding without asking for or inventing an email address.
+- Role-aware dashboards for Patient, Doctor and Admin.
+- A protected patient timeline and doctor medical-record CRUD.
+- Patient-controlled access requests and auditable consent decisions.
+- Admin care-team assignment without automatic access to clinical notes.
+- Responsive SaaS UI with explicit empty, loading, error and 403 states.
 
 ## 2. Trust constraint insight
 
-Ordinary collaboration tools often rely on the browser to hide controls, or on one backend role table that an attacker can bypass after compromising the app. In TrustFlow, client checks improve the experience but never make the authorization decision.
+Hiding a button is not a security boundary. TrustCare treats browser role checks as presentation only and repeats every decision at the Express API.
 
-The Express API fails closed. It validates the JWT signature against the adapter's **embedded JWK**, checks issuer and authorized party, requires a valid RFC 9449 DPoP proof for sender-bound tokens, rejects proof replay, and only then evaluates `admin` or `member` roles from the verified token. Missing configuration, missing roles, expired tokens, Bearer replay of a bound token and invalid proof details all produce 401/403 responses. Approval requests add separation of duties: even an Admin cannot approve a change they requested themselves.
+The resource server validates the JWT against the adapter's **embedded JWK**, checks issuer and authorized party, requires a valid RFC 9449 DPoP proof for sender-bound tokens, rejects proof replay, and reads roles only from verified claims. It then applies object-level rules:
+
+| Persona | Allowed | Explicitly blocked |
+| --- | --- | --- |
+| Patient | Read their own profile and records; approve or reject access to their own patient ID | Other patients' profiles and records; clinical writes |
+| Doctor | Read and CRUD records only for assigned patients; request access | Unassigned patients; self-approving a request; Admin assignment APIs |
+| Admin | View patient directory metadata and manage doctor assignments | Clinical note contents by default |
+
+`member` is temporarily mapped to Patient for compatibility with the existing local realm. The target realm roles are `patient`, `doctor` and `admin`; self-registration must never grant Doctor or Admin.
 
 ## 3. Value & impact
 
-TrustFlow helps student teams coordinate work without turning one team leader or one browser session into unchecked authority. A Member can create, update and delete tasks. Only an Admin can create or delete projects. Members can request a sensitive change, but only a different verified Admin can approve or reject it. Every operation is enforced at the API even if someone bypasses the interface.
+TrustCare gives judges a concrete privacy story rather than a generic role demo:
 
-For judges, the concrete story is simple: sign in, manage a task as a Member, request approval for a high-risk change, attempt the Admin URL and observe the 403 experience, then sign in as an Admin to decide the request and create or delete a project through the protected API.
+1. A patient creates an account and receives a private patient profile.
+2. A doctor cannot see that patient until an assignment or approved consent exists.
+3. The doctor requests access with a clinical reason.
+4. Only the matching patient can approve the request.
+5. The doctor can then create, update and delete draft medical records for that patient.
+6. An Admin can manage the assignment but still receives no clinical record content.
+7. A guessed URL or modified browser request still receives 401/403 from the server.
+
+This is directly extensible to a hospital portal, clinic referral flow or personal health-record vault. The prototype keeps data in memory to keep the hackathon slice reviewable; production deployment requires a database, encryption-at-rest strategy, retention policy and compliance review.
 
 ## 4. Why TideCloak matters
 
-TideCloak supplies the identity and governed role source. TrustFlow uses the official `@tidecloak/react` SDK with strict ES256 DPoP, `useAuthCallback`, session restoration, `secureFetch`, login and logout. The resource server uses the Tide adapter's embedded JWK instead of falling back to a remote JWKS endpoint.
+TrustCare uses the official `@tidecloak/react` SDK and Raziel integration guidance:
 
-The integration follows Raziel's official invariants:
+- `TideCloakContextProvider` initializes from the exported adapter.
+- `useAuthCallback` completes the redirect and restores the session.
+- The SDK's official `register()` path opens TideCloak self-registration.
+- `secureFetch` attaches the access token and strict ES256 DPoP proof.
+- The server verifies JWT signature, issuer, `azp`, expiry and DPoP `cnf.jkt`, signature, `ath`, method, URL, time and one-time `jti`.
+- Protected routes enforce Patient/Doctor/Admin roles and the patient/doctor assignment independently of the UI.
 
-- UI role checks are presentation only; APIs enforce authorization.
-- JWTs are verified server-side against the embedded Tide key set.
-- `cnf.jkt` is not treated as sufficient: the DPoP proof, method, URL, access-token hash, issued time and one-time `jti` are verified.
-- Roles come only from the verified JWT, never from an unprotected app role table.
+Tide Doctor passed 15 integration checks with `RESULT: OK` on 2026-10-22. The current local realm has IGA enabled. Role creation and self-registration configuration are therefore governed changes; their pending state is reported honestly in [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
 
-The included replay store is in-memory and correct for this single-process demo. A multi-instance deployment must replace it with a shared atomic store such as Redis or Postgres.
+The in-memory DPoP replay store is correct only for one API process. A multi-instance deployment must use a shared atomic store such as Redis or Postgres.
 
 ## 5. Prototype & storytelling
 
-The prototype demonstrates the security boundary rather than a fake login. Without a real Tide adapter it deliberately shows a configuration-required screen. With a configured realm, the flow is:
+The recommended demonstration is one end-to-end consent story:
 
-1. Continue with TideCloak and complete the real hosted/local login.
-2. Return through `/auth/redirect`; the SDK exchanges and restores the session.
-3. Load `/api/workspace` through DPoP-aware `secureFetch`.
-4. Create, move and delete a task and see actor-bound audit events appear.
-5. Submit a high-risk approval request as a Member.
-6. Visit `/admin` as a Member to see the unauthorized experience and server-side 403.
-7. Sign in as a different Admin, approve the request, then create and delete a temporary project through independently protected APIs.
+1. Open TrustCare and create/sign in to a Patient account through TideCloak.
+2. Show the patient's private profile and explain that `/api/workspace` is filtered using the verified token subject.
+3. Sign in as a Doctor with no assignment; show an empty patient list.
+4. Request access to the patient's ID.
+5. Return as the Patient and approve the request.
+6. Return as the Doctor, create a draft consultation, mark it final and show that final records cannot be deleted.
+7. Sign in as Admin, show care-team assignments and point out that clinical notes are deliberately absent.
+8. Close with JWT, DPoP and object-level authorization evidence.
 
-See [docs/DEMO_VIDEO.md](docs/DEMO_VIDEO.md) for the narration and recording checklist.
-
-See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) for the evidence-based Challenge 2 completion assessment and remaining submission work.
+See [docs/DEMO_VIDEO.md](docs/DEMO_VIDEO.md) for the timed narration and recording checklist. The repository's existing `Video.mp4` predates TrustCare and is **not** claimed as the final demo recording.
 
 ## Local development
 
 ### Prerequisites
 
 - Node.js 20+ and npm.
-- A TideCloak realm and public client.
-- Realm roles: `_tide_enabled`, `member`, and `admin`.
-- Valid redirect URI: `http://localhost:5137/auth/redirect`.
-- Valid web origin: `http://localhost:5137`.
-- An exported Tide adapter containing `realm`, `resource`, `auth-server-url`, Tide metadata and an embedded `jwk.keys` array.
+- Local Docker TideCloak or hosted Skycloak.
+- Realm roles `_tide_enabled`, `patient`, `doctor` and `admin` (`member` is accepted only as a temporary Patient compatibility role).
+- Self-registration enabled with Patient included in the realm's default composite role.
+- Redirect URI `http://localhost:5137/auth/redirect` and web origin `http://localhost:5137`.
+- Exported public adapter with Tide metadata, signed origin and embedded `jwk.keys`.
 
-Before creating a Tide realm, Tide's official workflow requires the human operator to provide the licence email, accept the [Tide Terms & Conditions](https://tide.org/legal), and choose local Docker or hosted Skycloak. Each operator must make those decisions for their own deployment.
+Before creating a realm, the human operator must provide the Tide licence email, personally accept the [Tide Terms & Conditions](https://tide.org/legal), and choose local Docker or hosted Skycloak. A realm cannot later be moved between those hosting modes.
 
-### Install and configure
+### Install and run
 
 ```powershell
 Set-Location "D:\code\RMIT-C2"
 npm.cmd install
-# Only needed on a new machine/deployment:
+# Only on a new machine/deployment:
 Copy-Item "C:\path\to\exported\tidecloak.json" ".\public\tidecloak.json"
 ```
 
-`public/tidecloak.json` is intentionally gitignored. Never add a confidential client secret to the browser adapter.
+`public/tidecloak.json` and `.env` are gitignored. Never put a confidential client secret into the browser adapter.
 
 Run the API and Vite app in separate terminals:
 
@@ -97,39 +117,38 @@ npm.cmd run dev
 
 Open `http://localhost:5137`.
 
-### TideCloak development infrastructure
+### Local TideCloak instance used for verification
 
-The development instance used for the 2026-10-22 verification runs the official `tideorg/tidecloak-dev:latest` image at `http://localhost:8080`, with realm `trustflow` and public client `trustflow-client`. Its H2 data, master-admin credential and exported adapter are local-only and gitignored.
+- Public URL: `http://localhost:8080`
+- Realm: `trustflow`
+- Public client: `trustflow-client`
+- App URL: `http://localhost:5137`
+- Hosting choice: local Docker
+- Branding choice: keep Tide's default login branding
+- In-app onboarding: display name only, no email field
 
-For a fresh environment, provide your own licence email and Terms acceptance, then follow Raziel's current `start-tidecloak-dev` / bootstrap playbook. The underlying local container shape is:
-
-```powershell
-docker run --name trustflow-tidecloak -p 8080:8080 `
-  -e KC_BOOTSTRAP_ADMIN_USERNAME=admin `
-  -e KC_BOOTSTRAP_ADMIN_PASSWORD="<set-outside-source-control>" `
-  tideorg/tidecloak-dev:latest
-```
-
-Do not reuse the placeholder password, commit it, or assume a locally created realm can later be moved to hosted Skycloak. Export the adapter only after IGA and the required roles are configured.
+Credentials, H2 data and the exported adapter remain local and excluded from Git.
 
 ## Security architecture
 
 ```text
 Browser / @tidecloak/react
-  ├─ TideCloak login + callback + session restoration
-  ├─ strict DPoP key and proof generation
+  ├─ login or patient registration
+  ├─ callback + session restoration
+  ├─ strict DPoP proof generation
   └─ secureFetch
-          │ access token + DPoP proof
+          │ verified token + proof
           ▼
 Express API
-  ├─ local JWT verification using adapter.jwk
-  ├─ issuer + azp + time checks
-  ├─ DPoP signature, cnf.jkt, ath, htm, htu, iat, jti checks
-  ├─ admin/member role enforcement
-  └─ project/task operation + audit event
+  ├─ embedded-JWK JWT verification
+  ├─ issuer / azp / time checks
+  ├─ DPoP signature / ath / htm / htu / iat / jti checks
+  ├─ Patient / Doctor / Admin role enforcement
+  ├─ subject ownership or doctor assignment check
+  └─ filtered response or protected CRUD
 ```
 
-HTTP outcomes are intentional: `401` means identity or proof could not be verified; `403` means the verified identity lacks the required role; validation errors return `400`.
+`401` means identity or sender proof could not be verified. `403` means the verified identity lacks the required role, ownership or care relationship. Validation failures return `400`; conflicts such as deleting a final record return `409`.
 
 ## Quality checks
 
@@ -137,18 +156,21 @@ HTTP outcomes are intentional: `401` means identity or proof could not be verifi
 npm.cmd run check
 ```
 
-The check runs ESLint, Node security/authorization tests and the production Vite build. Tide Doctor also validates the local adapter, embedded key, signed origin, DPoP provider/relay, server verification and secret hygiene.
+Verified on 2026-10-22:
+
+- ESLint: passed.
+- Node tests: **16/16 passed**, including DPoP replay and object-level authorization denial cases.
+- Vite production build: passed.
+- `npm install` audit: **0 vulnerabilities**.
+- Tide Doctor: **15 passed, 0 failures, RESULT: OK**; pending IGA changes were reported as a warning, not hidden.
 
 ## Current submission status
 
-- Source application: implemented on branch `codex/trustflow-final`.
-- Automated checks: ESLint, 14 Node tests, production build and npm audit passed on 2026-10-22. The earlier Tide Doctor run also passed its configured checks.
-- UI system: one Inter type family, one indigo/slate token palette, shared form controls and responsive desktop/mobile layouts were visually checked on 2026-10-22.
-- TideCloak local verification: realm `trustflow`, client `trustflow-client`, IGA and admin Tide account linking completed. The exported adapter and Docker data remain intentionally local and gitignored.
-- Browser verification: real TideCloak login, callback, session restoration and the protected dashboard were observed locally on 2026-10-22.
-- Authorization status: the linked account has effective `member`; its TrustFlow `admin` grant is an IGA change request awaiting explicit Tide approval in the Tide console.
-- Repository source: the working implementation is pushed to `origin/codex/trustflow-final` on 2026-10-22. This branch is not claimed as merged into `main` or formally submitted to the organizer.
-- Final demo video target: `Video.mp4` in the repository root. The existing file predates TrustFlow work and must be replaced with a newly recorded TrustFlow demo before submission; it is not claimed as the final recording.
+- Working branch: `codex/trustcare-medical-records`.
+- First TrustCare vertical-slice commit: `f549c9c`.
+- Source is pushed to the team GitHub repository; it is not claimed as merged into `main` or submitted to the organizer.
+- Real login/session/dashboard worked before the pivot; the new Patient self-registration and three-persona story still require the pending realm changes to be approved and then tested live.
+- Final demo video has not been recorded. Replace `Video.mp4` only after reviewing the new TrustCare recording.
 
 ## Team
 

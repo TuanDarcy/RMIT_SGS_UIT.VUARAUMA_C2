@@ -1,33 +1,47 @@
-# TrustFlow demo video
+# TrustCare demo video
 
 ## Final file
 
-The submission video must be saved as `Video.mp4` in the repository root. The current file was already present before the TrustFlow implementation and is **not** evidence of a completed TrustFlow recording. Replace it only after reviewing the new recording.
+The final submission video must be saved as `Video.mp4` in the repository root. The current file predates TrustCare and is **not** evidence of a completed recording. Replace it only after reviewing the new export.
+
+## Story in one sentence
+
+“A patient's record is invisible by default; a verified doctor requests access, the patient consents, and only then can that doctor document care.”
 
 ## Suggested 3-minute script
 
-1. **Problem (0:00–0:20)** — “Student teams collaborate quickly, but shared tools often trust the browser or one powerful admin. TrustFlow makes access verifiable.”
-2. **Real login (0:20–0:45)** — Show the landing page, choose “Continue with TideCloak”, complete login, and point out the redirect back into the app.
-3. **Verified CRUD (0:45–1:15)** — Open Projects, create a temporary task, advance it and delete it. Return to Overview and show the actor-bound audit events.
-4. **Approval request (1:15–1:40)** — As a Member, open Approvals and submit a high-risk request to publish the final demo.
-5. **Unauthorized behavior (1:40–2:00)** — Navigate directly to `/admin`; show the clear 403 page. If practical, show the protected Admin API returning 403 without exposing tokens.
-6. **Admin separation of duties (2:00–2:35)** — Sign in as a different Admin, approve the pending request, create a temporary project and delete it. Explain that the requester cannot approve their own change.
-7. **Security close (2:35–2:55)** — Explain TideCloak session restoration, embedded-JWK JWT verification, DPoP sender binding/replay rejection and server-side role enforcement.
-8. **Closing (2:55–3:00)** — “TrustFlow: move ideas forward, keep trust intact. Built by UIT.VUARAUMA.”
+1. **Problem — 0:00–0:20**
+   “A medical portal should not expose every record to everyone with a staff role. TrustCare verifies both identity and the relationship to one patient.”
+2. **Real TideCloak entry — 0:20–0:45**
+   Show the TrustCare landing page, “Sign in securely” and “Create patient account”. Complete real TideCloak login and return through `/auth/redirect`.
+3. **Patient privacy — 0:45–1:10**
+   Show one Patient profile and its timeline. Explain that the API matches the verified token subject to the patient owner; another Patient cannot retrieve it.
+4. **Doctor denied by default — 1:10–1:30**
+   Sign in as an unassigned Doctor and show the empty patient list. Submit an access request with the target Patient ID and a reason.
+5. **Consent — 1:30–1:50**
+   Return as the Patient, open Access & consent, approve the known Doctor, and explain that another Patient cannot decide this request.
+6. **Protected medical CRUD — 1:50–2:25**
+   Return as Doctor. Create a synthetic draft consultation, mark it final, and explain that final records cannot be deleted. If time permits, create/delete a second draft.
+7. **Admin without clinical overreach — 2:25–2:45**
+   Sign in as Admin. Show patient directory metadata and care assignment management; point out that the API returns no clinical records to Admin by default.
+8. **Security close — 2:45–3:00**
+   “TideCloak restores identity, DPoP binds the sender, and TrustCare's server checks role plus patient relationship. TrustCare: private care, verified access. Built by UIT.VUARAUMA.”
 
 ## Recording checklist
 
-- [ ] Use a configured TideCloak realm with separate Member and Admin accounts.
-- [ ] Clear unrelated browser tabs, notifications and personal data.
-- [ ] Confirm `/api/health` is healthy and both dev processes are running.
-- [ ] Record at 1080p; keep browser zoom at 100%.
-- [ ] Show actual login, callback, session restoration and logout.
-- [ ] Show Member create, update and delete a temporary task.
-- [ ] Show Member submit a high-risk approval request.
-- [ ] Show Member denied from `/admin`.
-- [ ] Show a different Admin approve the request.
-- [ ] Show Admin create and delete a temporary project.
-- [ ] Show the audit trail after protected actions.
-- [ ] Do not display tokens, adapter JSON, admin password or developer-console secrets.
-- [ ] Export H.264/AAC MP4 and verify audio, legibility and full playback.
-- [ ] Replace root `Video.mp4`, check its size/duration, then commit it intentionally.
+- [ ] Approve only the intended Tide IGA changes.
+- [ ] Confirm self-registration is enabled and signed IdP `RegOn` is true.
+- [ ] Prepare separate Patient, Doctor and Admin accounts.
+- [ ] Use synthetic names and medical data only.
+- [ ] Confirm `/api/health`, Vite, API and TideCloak are running.
+- [ ] Run `npm run check` and Tide Doctor immediately before recording.
+- [ ] Record at 1080p with browser zoom at 100%.
+- [ ] Show real Patient registration or login, callback, session restoration and logout.
+- [ ] Show an unassigned Doctor cannot see the Patient.
+- [ ] Show Doctor access request and matching Patient approval.
+- [ ] Show Doctor create/update/delete-draft medical record operations.
+- [ ] Show Admin assignment management and absence of clinical notes.
+- [ ] Show or narrate clear 401/403 behavior without exposing tokens.
+- [ ] Hide adapter JSON, credentials, local `.env`, admin tokens and personal notifications.
+- [ ] Export H.264/AAC MP4 and review audio, text legibility and full playback.
+- [ ] Replace root `Video.mp4`, verify duration and file identity, then commit intentionally.
