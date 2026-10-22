@@ -1,388 +1,208 @@
-import { useEffect, useMemo, useReducer, useState } from "react";
-import { useTideCloak } from "@tidecloak/react";
-import seed from "./seed.json";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { NavLink, Navigate, Outlet, Route, Routes, useNavigate } from "react-router-dom";
+import { useAuthCallback, useTideCloak } from "@tidecloak/react";
+import { ProfileOnboarding } from "./components/ProfileOnboarding.jsx";
 
-const initialPanel = [
-  { id: "approver-1", name: "Dr. Amara Okafor", title: "Head of School" },
-  { id: "approver-2", name: "Sam Williams", title: "Academic Advisor" },
-  { id: "approver-3", name: "Alex Morgan", title: "Student Representative" },
-];
+const WorkspaceContext = createContext(null);
+const roleCopy = { admin: "Workspace Admin", member: "Team Member" };
 
-const demoRegistrar = { id: "registrar-1", name: "Taylor Reed", title: "Registrar" };
-const actionNames = {
-  force: "Force enrol",
-  jump: "Jump the queue",
-  remove: "Remove a student",
-  panel: "Change approver panel",
-};
-
-function audit(state, actor, action, reason) {
-  return {
-    ...state,
-    audit: [{
-      id: `${Date.now()}-${Math.random()}`,
-      time: new Date().toISOString(),
-      actor,
-      action,
-      reason,
-    }, ...state.audit],
-  };
+function initials(name = "TrustFlow User") {
+  return name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }
 
-function applyApprovedAction(state, request) {
-  if (request.kind === "panel") {
-    return {
-      ...state,
-      panel: [...state.panel.filter((member) => member.id !== request.replaceMember.id), request.candidate],
-    };
-  }
-
-  const courses = state.courses.map((course) => {
-    if (course.id !== request.courseId) return course;
-    const enrolled = course.enrolled.filter((id) => id !== request.studentId);
-    const waitlist = course.waitlist.filter((id) => id !== request.studentId);
-    if (request.kind === "force") {
-      return { ...course, enrolled: [...enrolled, request.studentId], waitlist };
-    }
-    if (request.kind === "jump") {
-      return { ...course, enrolled, waitlist: [request.studentId, ...waitlist] };
-    }
-    return { ...course, enrolled, waitlist };
-  });
-  return { ...state, courses };
+export default function App({ configurationError = "" }) {
+  if (configurationError) return <ConfigurationRequired message={configurationError} />;
+  return <AuthenticatedApp />;
 }
 
-function reducer(state, event) {
-  if (event.type === "enrol") {
-    const course = state.courses.find((item) => item.id === event.courseId);
-    if (course.enrolled.includes(event.studentId) || course.waitlist.includes(event.studentId)) return state;
-    const hasSeat = course.enrolled.length < course.capacity;
-    const courses = state.courses.map((item) => item.id !== course.id ? item : hasSeat
-      ? { ...item, enrolled: [...item.enrolled, event.studentId] }
-      : { ...item, waitlist: [...item.waitlist, event.studentId] });
-    return audit({ ...state, courses }, event.actor, hasSeat ? "Enrolment recorded" : "Joined waitlist",
-      hasSeat ? `${event.studentName} enrolled in ${course.code}.` : `${event.studentName} joined ${course.code}'s waitlist in FIFO order.`);
-  }
-  if (event.type === "capacity") {
-    const courses = state.courses.map((course) => course.id === event.courseId
-      ? { ...course, capacity: Math.max(1, Number(event.capacity) || 1) }
-      : course);
-    const course = state.courses.find((item) => item.id === event.courseId);
-    return audit({ ...state, courses }, event.actor, "Seat limit updated",
-      `${course.code} seat limit set to ${event.capacity}.`);
-  }
-  if (event.type === "blocked") {
-    return audit(state, event.actor, "Blocked registrar override attempt", event.reason);
-  }
-  if (event.type === "request") {
-    const request = { ...event.request, approvals: [], status: "pending", id: `${Date.now()}-${Math.random()}` };
-    return audit({ ...state, requests: [request, ...state.requests] }, request.requester,
-      `${actionNames[request.kind]} requested`, request.reason);
-  }
-  if (event.type === "vote") {
-    const request = state.requests.find((item) => item.id === event.requestId);
-    if (!request || request.status !== "pending") return state;
-    if (request.requester === event.approver.name || !state.panel.some((member) => member.id === event.approver.id)
-      || request.approvals.some((member) => member.id === event.approver.id)) {
-      return audit(state, event.approver.name, "Approval blocked",
-        "Requester cannot approve their own request; panel members may vote only once.");
-    }
-    const approvals = [...request.approvals, event.approver];
-    let next = audit({
-      ...state,
-      requests: state.requests.map((item) => item.id === request.id ? { ...item, approvals } : item),
-    }, event.approver.name, "Exception approval recorded", `Approval ${approvals.length} of 2 for ${actionNames[request.kind].toLowerCase()}: ${request.reason}`);
-    if (approvals.length >= 2) {
-      const approvedRequest = { ...request, approvals };
-      next = applyApprovedAction(next, approvedRequest);
-      next = {
-        ...next,
-        requests: next.requests.map((item) => item.id === request.id ? { ...item, approvals, status: "approved" } : item),
-      };
-      next = audit(next, "FairEnrol demo", "Exception approved and applied",
-        `${actionNames[request.kind]} approved by ${approvals.map((member) => member.name).join(" and ")}. Public reason: ${request.reason}`);
-    }
-    return next;
-  }
-  if (event.type === "deny") {
-    const request = state.requests.find((item) => item.id === event.requestId);
-    if (!request || request.status !== "pending") return state;
-    return audit({
-      ...state,
-      requests: state.requests.map((item) => item.id === request.id ? { ...item, status: "denied" } : item),
-    }, event.actor, "Exception denied", `${event.reason} Request reason: ${request.reason}`);
-  }
-  return state;
-}
-
-function personName(state, id) {
-  return state.students.find((student) => student.id === id)?.name ?? id;
-}
-
-export default function App() {
-  const { authenticated, isInitializing, isLoading, initError, login, logout, hasRealmRole, getValueFromToken } = useTideCloak();
-  const [state, dispatch] = useReducer(reducer, {
-    courses: seed.courses,
-    students: seed.students,
-    panel: initialPanel,
-    requests: [],
-    audit: [],
-  });
-  const [role, setRole] = useState("student");
-  const [studentId, setStudentId] = useState(seed.students[0].id);
-  const [approverId, setApproverId] = useState(initialPanel[0].id);
-  const [selectedCourse, setSelectedCourse] = useState(seed.courses[0].id);
-  const [requestKind, setRequestKind] = useState("force");
-  const [targetStudent, setTargetStudent] = useState(seed.students[3].id);
-  const [reason, setReason] = useState("Accessibility accommodation requires a seat in this course.");
-  const [panelCandidate, setPanelCandidate] = useState(demoRegistrar.id);
-  const [panelRemoval, setPanelRemoval] = useState(initialPanel[2].id);
-  const [notice, setNotice] = useState("");
-
-  useEffect(() => {
-    if (location.pathname === "/auth/redirect" && !isInitializing) {
-      history.replaceState(null, "", "/");
-    }
-  }, [isInitializing]);
-
-  const activeApprover = state.panel.find((member) => member.id === approverId) ?? state.panel[0];
-  const actor = role === "registrar"
-    ? demoRegistrar
-    : role === "approver"
-      ? activeApprover
-      : state.students.find((student) => student.id === studentId);
-  const isAlreadyEnrolled = (course, id) => course.enrolled.includes(id);
-
-  const ownWaitlists = useMemo(() => state.courses
-    .map((course) => ({ course, position: course.waitlist.indexOf(studentId) + 1 }))
-    .filter((item) => item.position > 0), [state.courses, studentId]);
-
-  function submitRequest(event) {
-    event.preventDefault();
-    const base = {
-      kind: requestKind,
-      requester: actor.name,
-      reason: reason.trim(),
-    };
-    if (!base.reason) return;
-    if (requestKind === "panel") {
-      const candidate = panelCandidate === demoRegistrar.id
-        ? { id: demoRegistrar.id, name: demoRegistrar.name, title: demoRegistrar.title }
-        : state.students.find((student) => student.id === panelCandidate);
-      const replaceMember = state.panel.find((member) => member.id === panelRemoval);
-      if (!candidate || !replaceMember) return;
-      dispatch({ type: "request", request: { ...base, candidate, replaceMember } });
-    } else {
-      dispatch({ type: "request", request: { ...base, courseId: selectedCourse, studentId: targetStudent } });
-    }
-    setNotice("Request added to the public log. This demo's approval flow is simulated.");
-  }
-
-  function attemptRegistrarOverrides() {
-    dispatch({ type: "blocked", actor: demoRegistrar.name, reason: "Registrar cannot reorder a queue; positions change only through FIFO enrolment or a publicly reasoned, two-approval exception." });
-    dispatch({ type: "blocked", actor: demoRegistrar.name, reason: "Registrar cannot change the approver panel alone; a panel change needs two approver votes." });
-    setNotice("Both override attempts were blocked. The public log records each attempt.");
-  }
-
-  function joinCourse(course) {
-    dispatch({ type: "enrol", courseId: course.id, studentId, studentName: personName(state, studentId), actor: actor.name });
-    setNotice("Enrolment or FIFO waitlist position recorded in this demo.");
-  }
-
-  async function startLogin() {
-    try {
-      await login();
-    } catch (error) {
-      setNotice(`TideCloak login could not start: ${error instanceof Error ? error.message : String(error)}. Check that TideCloak is running at localhost:8080.`);
-    }
-  }
-
-  if (isInitializing) return <main className="loading">Connecting to TideCloak…</main>;
-
-  const tokenName = authenticated
-    ? getValueFromToken("name") || getValueFromToken("preferred_username")
-    : "";
-  const hasRegistrarRole = authenticated && (hasRealmRole("registrar") || hasRealmRole("admin"));
-  const hasApproverRole = authenticated && hasRealmRole("approver");
-
+function ConfigurationRequired({ message }) {
   return (
-    <main className="shell">
-      <header className="topbar">
-        <a className="brand" href="#"><span className="brand-mark">F</span> FairEnrol</a>
-        <div className="top-actions">
-          <span className={`auth-state ${authenticated ? "connected" : ""}`}>
-            <i /> {authenticated ? `TideCloak · ${tokenName || "signed in"}` : "TideCloak · not signed in"}
-          </span>
-          {authenticated
-            ? <button className="button quiet" onClick={logout}>Log out</button>
-            : <button className="button dark" onClick={startLogin} disabled={isLoading}>{isLoading ? "Starting login…" : "Log in with TideCloak"}</button>}
+    <main className="public-shell">
+      <nav className="public-nav"><Brand /><span className="secure-pill"><i /> TideCloak configuration required</span></nav>
+      <section className="landing-grid">
+        <div className="landing-copy">
+          <span className="eyebrow">UIT.VUARAUMA · RMIT HACKATHON 2026</span>
+          <h1>Move ideas forward.<br /><em>Keep trust intact.</em></h1>
+          <p>TrustFlow is a secure student collaboration workspace where identity, roles and every protected operation are enforced with TideCloak.</p>
+          <div className="config-card" role="alert"><strong>Connect your TideCloak realm</strong><p>{message}. Copy the exported adapter to <code>public/tidecloak.json</code>, then reload.</p></div>
         </div>
-      </header>
-
-      <section className="hero">
-        <div>
-          <div className="eyebrow"><span /> COURSE REGISTRATION, WITHOUT FAVOURS</div>
-          <h1>A fair place<br />in every queue.</h1>
-          <p>First come, first served. Exceptions are public, reasoned, and require collective approval.</p>
-        </div>
-        <div className="hero-card">
-          <span className="card-kicker">THE PROMISE</span>
-          <strong>No single person<br />can move the line.</strong>
-          <div className="avatar-stack">{state.panel.map((member, index) => <span key={member.id} className={`avatar a${index}`}>{member.name.split(" ").map((part) => part[0]).slice(-2).join("")}</span>)}</div>
-          <small>Approver panel · 2 of 3 required</small>
-        </div>
+        <LandingVisual configured={false} />
       </section>
-
-      <div className="demo-warning">
-        <span>DEMO MODE</span>
-        TideCloak login is real when configured. The role switcher and 2-of-3 exception flow below are local simulations, not Tide-enforced authorization.
-      </div>
-      {initError && <div className="notice login-error" role="alert">
-        TideCloak initialization failed: {initError.message}. Check that the local TideCloak server is running at localhost:8080 and that the fairenrol realm/client is configured.
-      </div>}
-
-      <section className="toolbar">
-        <div>
-          <label htmlFor="role">VIEW AS</label>
-          <select id="role" value={role} onChange={(event) => setRole(event.target.value)}>
-            <option value="student">Student</option>
-            <option value="registrar">Registrar</option>
-            <option value="approver">Approver</option>
-          </select>
-          {role === "student" && <select aria-label="Demo student" value={studentId} onChange={(event) => setStudentId(event.target.value)}>
-            {state.students.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}
-          </select>}
-          {role === "approver" && <select aria-label="Demo approver" value={activeApprover?.id ?? ""} onChange={(event) => setApproverId(event.target.value)}>
-            {state.panel.map((member) => <option key={member.id} value={member.id}>{member.name} · {member.title}</option>)}
-          </select>}
-        </div>
-        <div className="role-hint">
-          {authenticated
-            ? `Tide roles: ${hasRegistrarRole ? "registrar " : ""}${hasApproverRole ? "approver" : ""}${!hasRegistrarRole && !hasApproverRole ? "student / no admin role" : ""}`
-            : "Sign in to view your TideCloak identity and realm roles."}
-        </div>
-      </section>
-
-      {notice && <div className="notice" role="status">{notice}<button aria-label="Dismiss notice" onClick={() => setNotice("")}>×</button></div>}
-
-      {role === "student" && (
-        <section className="section">
-          <div className="section-heading"><div><div className="eyebrow">STUDENT DASHBOARD</div><h2>Your courses</h2></div><span className="count-pill">{state.courses.length} open courses</span></div>
-          {ownWaitlists.length > 0 && <div className="position-card"><strong>Your waitlist positions</strong>{ownWaitlists.map(({ course, position }) => <span key={course.id}>{course.code} <b>#{position}</b></span>)}</div>}
-          <div className="course-grid">
-            {state.courses.map((course) => {
-              const already = isAlreadyEnrolled(course, studentId);
-              const position = course.waitlist.indexOf(studentId) + 1;
-              const available = Math.max(0, course.capacity - course.enrolled.length);
-              return <article className="course-card" key={course.id}>
-                <div className="course-top"><span className="course-code">{course.code}</span><span className={available ? "seats open" : "seats full"}>{available ? `${available} seats open` : "At capacity"}</span></div>
-                <h3>{course.name}</h3>
-                <div className="course-stats"><span>Enrolled <b>{course.enrolled.length}/{course.capacity}</b></span><span>Waiting <b>{course.waitlist.length}</b></span></div>
-                {position > 0
-                  ? <div className="queue-status">You’re #{position} in the waitlist <small>Order is first come, first served.</small></div>
-                  : already
-                    ? <div className="queue-status enrolled">You’re enrolled <small>Your place is confirmed.</small></div>
-                    : <button className="button dark full-width" onClick={() => joinCourse(course)}>{available ? "Enrol in course" : "Join waitlist"}</button>}
-              </article>;
-            })}
-          </div>
-          <div className="section-heading subheading"><div><div className="eyebrow">PUBLIC EXCEPTIONS</div><h2>Reasons that changed a queue</h2></div></div>
-          <div className="reason-list">
-            {state.requests.filter((request) => request.status === "approved").map((request) => <div className="reason-item" key={request.id}><span className="approved-tag">APPROVED</span><div><strong>{actionNames[request.kind]}</strong><p>{request.reason}</p></div></div>)}
-            {!state.requests.some((request) => request.status === "approved") && <p className="empty">No exceptions approved. The original queue remains unchanged.</p>}
-          </div>
-        </section>
-      )}
-
-      {role === "registrar" && (
-        <section className="section">
-          <div className="section-heading"><div><div className="eyebrow">REGISTRAR DASHBOARD</div><h2>Course administration</h2></div><span className="count-pill">Course limits only</span></div>
-          <div className="registrar-grid">
-            {state.courses.map((course) => <article className="course-card" key={course.id}><span className="course-code">{course.code}</span><h3>{course.name}</h3><CapacityEditor course={course} actor={demoRegistrar.name} dispatch={dispatch} /><div className="course-stats"><span>Enrolled <b>{course.enrolled.length}</b></span><span>Waitlist <b>{course.waitlist.length}</b></span></div></article>)}
-          </div>
-          <div className="blocked-card"><div><span className="blocked-icon">⛔</span><div><strong>Override attempt demo</strong><p>Try moving a friend to the front or adding yourself to the approver panel.</p></div></div><button className="button outline" onClick={attemptRegistrarOverrides}>Attempt both overrides</button></div>
-          <RequestForm {...{ state, selectedCourse, setSelectedCourse, requestKind, setRequestKind, targetStudent, setTargetStudent, reason, setReason, panelCandidate, setPanelCandidate, panelRemoval, setPanelRemoval, submitRequest }} registrar />
-        </section>
-      )}
-
-      {role === "approver" && (
-        <section className="section">
-          <div className="section-heading"><div><div className="eyebrow">APPROVER PANEL</div><h2>Review exception requests</h2></div><span className="count-pill">{state.panel.length} panel members</span></div>
-          <div className="panel-strip">{state.panel.map((member) => <div className="panel-person" key={member.id}><span className="avatar">{member.name.split(" ").map((part) => part[0]).slice(-2).join("")}</span><span><strong>{member.name}</strong><small>{member.title}</small></span></div>)}</div>
-          <RequestForm {...{ state, selectedCourse, setSelectedCourse, requestKind, setRequestKind, targetStudent, setTargetStudent, reason, setReason, panelCandidate, setPanelCandidate, panelRemoval, setPanelRemoval, submitRequest }} />
-          <div className="request-list">
-            {state.requests.map((request) => <article className="request-card" key={request.id}>
-              <div className="request-head"><div><span className="eyebrow">{actionNames[request.kind]}</span><h3>{request.kind === "panel" ? `Replace ${request.replaceMember.name} with ${request.candidate.name}` : `${request.kind === "force" ? "Enrol" : request.kind === "jump" ? "Move up" : "Remove"} ${personName(state, request.studentId)} · ${state.courses.find((course) => course.id === request.courseId)?.code}`}</h3></div><span className={`status-tag ${request.status}`}>{request.status}</span></div>
-              <p className="request-reason">“{request.reason}”</p>
-              <div className="vote-row"><span>{request.approvals.length} of 2 approvals</span><div className="vote-avatars">{request.approvals.map((member) => <span className="avatar mini" title={member.name} key={member.id}>{member.name.split(" ").map((part) => part[0]).slice(-2).join("")}</span>)}</div></div>
-              {request.status === "pending" && <div className="request-actions">
-                {request.requester === activeApprover?.name
-                  ? <span className="muted">Requester cannot approve their own request</span>
-                  : <button className="button approve" onClick={() => dispatch({ type: "vote", requestId: request.id, approver: activeApprover })} disabled={request.approvals.some((member) => member.id === activeApprover?.id)}>Approve as {activeApprover?.name}</button>}
-                <button className="button text-button" onClick={() => dispatch({ type: "deny", requestId: request.id, actor: activeApprover?.name, reason: "The panel declined this request." })}>Deny</button>
-              </div>}
-            </article>)}
-            {state.requests.length === 0 && <p className="empty">No open requests. Submit one above to begin the demo.</p>}
-          </div>
-        </section>
-      )}
-
-      <section className="section explainer">
-        <div className="section-heading"><div><div className="eyebrow">WHY GOVERNANCE MATTERS</div><h2>Ordinary roles vs. collective control</h2></div></div>
-        <div className="compare-grid">
-          <article className="compare-card ordinary"><span>ORDINARY LOGIN + BACKEND ROLES</span><h3>The registrar could</h3><ul><li>Change queue order with an admin API call</li><li>Force-enrol a friend without a public reason</li><li>Add themselves as the only approver</li></ul><p>One trusted backend role is a single point of power.</p></article>
-          <article className="compare-card tide"><span>TIDECLOAK + FAIR POLICY</span><h3>The demo blocks this</h3><ul><li>Queue position is assigned in FIFO order</li><li>Exceptions show their reason in the public log</li><li>Two different panel members must approve</li></ul><p>Real TideCloak login is wired; business-action quorum below is simulated and needs a Tide policy integration.</p></article>
-        </div>
-      </section>
-
-      <section className="section audit-section">
-        <div className="section-heading"><div><div className="eyebrow">TRANSPARENT BY DEFAULT</div><h2>Public audit log</h2></div><span className="count-pill">{state.audit.length} events</span></div>
-        <div className="audit-list">
-          {state.audit.map((entry) => <div className="audit-row" key={entry.id}><time>{new Date(entry.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</time><span className="audit-dot" /><div><strong>{entry.action}</strong><p>{entry.reason}</p></div><span className="audit-actor">{entry.actor}</span></div>)}
-          {state.audit.length === 0 && <p className="empty">Actions, approvals, denials and blocked attempts will appear here.</p>}
-        </div>
-      </section>
-
-      <footer><span>FairEnrol · Synthetic data only</span><span>Demo build · no university systems connected</span></footer>
     </main>
   );
 }
 
-function RequestForm(props) {
-  const { state, selectedCourse, setSelectedCourse, requestKind, setRequestKind, targetStudent, setTargetStudent, reason, setReason, panelCandidate, setPanelCandidate, panelRemoval, setPanelRemoval, submitRequest, registrar = false } = props;
-  const candidates = [...state.students.filter((student) => !state.panel.some((member) => member.id === student.id))
-    .slice(0, 5).map((student) => ({ ...student, title: "Student representative" })), demoRegistrar];
+function AuthenticatedApp() {
+  const tide = useTideCloak();
+  const navigate = useNavigate();
+  const callback = useAuthCallback({
+    onSuccess: (returnUrl) => navigate(returnUrl || "/dashboard", { replace: true }),
+    onError: () => navigate("/?auth=failed", { replace: true }),
+    onMissingVerifierRedirectTo: "/",
+  });
 
-  return <form className="request-form" onSubmit={submitRequest}>
-    <div className="form-title"><div><div className="eyebrow">{registrar ? "REQUEST AN EXCEPTION" : "NEW PROTECTED REQUEST"}</div><h3>Ask the panel to review</h3></div><span className="approval-badge">2 of 3 required</span></div>
-    <div className="form-grid">
-      <label>Action<select value={requestKind} onChange={(event) => setRequestKind(event.target.value)}>{Object.entries(actionNames).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
-      {requestKind !== "panel" && <>
-        <label>Course<select value={selectedCourse} onChange={(event) => setSelectedCourse(event.target.value)}>{state.courses.map((course) => <option key={course.id} value={course.id}>{course.code} · {course.name}</option>)}</select></label>
-        <label>Student<select value={targetStudent} onChange={(event) => setTargetStudent(event.target.value)}>{state.students.map((student) => <option key={student.id} value={student.id}>{student.name}</option>)}</select></label>
-      </>}
-      {requestKind === "panel" && <>
-        <label>Replace panel member<select value={panelRemoval} onChange={(event) => setPanelRemoval(event.target.value)}>{state.panel.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}</select></label>
-        <label>With new member<select value={panelCandidate} onChange={(event) => setPanelCandidate(event.target.value)}>{candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name}</option>)}</select></label>
-      </>}
-      <label className="reason-field">Public reason<textarea required value={reason} onChange={(event) => setReason(event.target.value)} maxLength={240} placeholder="State the reason; this will be public." /></label>
-    </div>
-    <div className="form-footer"><span>Requester cannot approve their own request.</span><button className="button dark" type="submit">Submit public request</button></div>
-  </form>;
-}
-
-function CapacityEditor({ course, actor, dispatch }) {
-  const [capacity, setCapacity] = useState(String(course.capacity));
-  useEffect(() => setCapacity(String(course.capacity)), [course.capacity]);
-
-  function save(event) {
-    event.preventDefault();
-    dispatch({ type: "capacity", courseId: course.id, capacity, actor });
+  if (callback.isCallback) {
+    return <main className="boot-screen"><div className="pulse-logo">TF</div><p>{callback.error ? `Authentication failed: ${callback.error.message}` : "Completing secure sign-in…"}</p></main>;
   }
+  if (tide.isInitializing) return <main className="boot-screen"><div className="pulse-logo">TF</div><p>Restoring your secure session…</p></main>;
 
-  return <form className="capacity-label" onSubmit={save}>
-    <label htmlFor={`capacity-${course.id}`}>Seat limit</label>
-    <input id={`capacity-${course.id}`} type="number" min="1" value={capacity} onChange={(event) => setCapacity(event.target.value)} />
-    <button className="button quiet" type="submit">Save</button>
-  </form>;
+  return (
+    <>
+      {tide.authenticated && <ProfileOnboarding />}
+      <Routes>
+      <Route path="/" element={tide.authenticated ? <Navigate to="/dashboard" replace /> : <LoginPage tide={tide} />} />
+      <Route path="/auth/redirect" element={<Navigate to={tide.authenticated ? "/dashboard" : "/"} replace />} />
+      <Route path="/unauthorized" element={<Unauthorized />} />
+      <Route element={<AuthGuard tide={tide} />}>
+        <Route element={<WorkspaceLayout tide={tide} />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/projects" element={<Projects />} />
+          <Route path="/admin" element={<RoleGuard tide={tide} role="admin" />}>
+            <Route index element={<AdminPanel />} />
+          </Route>
+        </Route>
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
+  );
 }
+
+function LoginPage({ tide }) {
+  const [error, setError] = useState("");
+  async function login() {
+    setError("");
+    try { await tide.login(); } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+  }
+  return (
+    <main className="public-shell">
+      <nav className="public-nav"><Brand /><span className="secure-pill"><i /> Secured by TideCloak</span></nav>
+      <section className="landing-grid">
+        <div className="landing-copy">
+          <span className="eyebrow">UIT.VUARAUMA · RMIT HACKATHON 2026</span>
+          <h1>Move ideas forward.<br /><em>Keep trust intact.</em></h1>
+          <p>A secure student collaboration workspace for projects, tasks and decisions—built so access is verified, not assumed.</p>
+          <button className="primary-button login-button" onClick={login} disabled={tide.isLoading}>{tide.isLoading ? "Opening TideCloak…" : "Continue with TideCloak"}<span>→</span></button>
+          {error && <div className="inline-error" role="alert">{error}</div>}
+          {tide.initError && <div className="inline-error" role="alert">TideCloak initialization failed: {tide.initError.message}</div>}
+          <div className="trust-row"><span>✓ Tide identity</span><span>✓ Server roles</span><span>✓ Sender-bound sessions</span></div>
+        </div>
+        <LandingVisual configured />
+      </section>
+    </main>
+  );
+}
+
+function LandingVisual({ configured }) {
+  return <div className="landing-visual" aria-hidden="true"><div className="orbit orbit-one" /><div className="orbit orbit-two" /><div className="shield"><span>TF</span><small>{configured ? "TRUST BY DESIGN" : "CONFIGURATION PENDING"}</small></div><div className="signal-card card-a"><b>01</b><span>Ideas</span><small>Organised</small></div><div className="signal-card card-b"><b>02</b><span>People</span><small>Verified</small></div><div className="signal-card card-c"><b>03</b><span>Progress</span><small>Visible</small></div></div>;
+}
+
+function AuthGuard({ tide }) {
+  return tide.authenticated ? <WorkspaceProvider tide={tide} /> : <Navigate to="/" replace />;
+}
+
+function RoleGuard({ tide, role }) {
+  return tide.hasRealmRole(role) ? <Outlet /> : <Navigate to="/unauthorized" replace />;
+}
+
+function WorkspaceProvider({ tide }) {
+  const [workspace, setWorkspace] = useState(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const secureFetch = tide.secureFetch;
+  const request = useCallback(async (path, options = {}) => {
+    const url = new URL(path, window.location.origin).toString();
+    const response = await secureFetch(url, { ...options, headers: { "Content-Type": "application/json", ...options.headers } });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const problem = new Error(body.error || `Request failed (${response.status})`);
+      problem.status = response.status;
+      throw problem;
+    }
+    return body;
+  }, [secureFetch]);
+
+  const refresh = useCallback(async () => {
+    setLoading(true); setError("");
+    try { setWorkspace(await request("/api/workspace")); }
+    catch (reason) { setError(reason.status === 403 ? "Your account does not have a TrustFlow role." : reason.message); }
+    finally { setLoading(false); }
+  }, [request]);
+
+  useEffect(() => {
+    let active = true;
+    request("/api/workspace")
+      .then((result) => { if (active) setWorkspace(result); })
+      .catch((reason) => { if (active) setError(reason.status === 403 ? "Your account does not have a TrustFlow role." : reason.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [request]);
+  const value = useMemo(() => ({ workspace, request, refresh }), [workspace, request, refresh]);
+  if (loading) return <main className="boot-screen"><div className="pulse-logo">TF</div><p>Verifying workspace access…</p></main>;
+  if (error) return <main className="state-page"><div className="state-card"><span className="state-icon">!</span><h1>Access could not be verified</h1><p>{error}</p><button className="primary-button" onClick={refresh}>Try again</button></div></main>;
+  return <WorkspaceContext.Provider value={value}><Outlet /></WorkspaceContext.Provider>;
+}
+
+function useWorkspace() {
+  const value = useContext(WorkspaceContext);
+  if (!value) throw new Error("Workspace context is unavailable");
+  return value;
+}
+
+function WorkspaceLayout({ tide }) {
+  const { workspace } = useWorkspace();
+  const user = workspace.user;
+  return (
+    <div className="app-shell">
+      <aside className="sidebar"><Brand light /><nav className="side-nav"><NavLink to="/dashboard">◫ <span>Overview</span></NavLink><NavLink to="/projects">◆ <span>Projects</span></NavLink>{user.roles.includes("admin") && <NavLink to="/admin">⌘ <span>Admin</span></NavLink>}</nav><div className="security-card"><span>◉</span><strong>TideCloak active</strong><small>JWT + DPoP enforced</small></div><button className="logout-link" onClick={() => tide.logout()}>↪ Log out</button></aside>
+      <div className="workspace-shell"><header className="workspace-header"><div><small>SECURE WORKSPACE</small><strong>UIT.VUARAUMA</strong></div><div className="profile"><span className="avatar">{initials(user.name)}</span><div><b>{user.name}</b><small>{roleCopy[user.primaryRole] || "Verified user"}</small></div></div></header><main className="workspace-main"><Outlet /></main></div>
+    </div>
+  );
+}
+
+function Dashboard() {
+  const { workspace } = useWorkspace();
+  const tasks = workspace.projects.flatMap((project) => project.tasks);
+  const done = tasks.filter((task) => task.status === "done").length;
+  return <><PageIntro eyebrow="GOOD MORNING" title={`Build with confidence, ${workspace.user.firstName}.`} copy="Your team’s priorities, progress and decisions in one verified workspace." /><section className="metrics"><Metric label="ACTIVE PROJECTS" value={workspace.projects.length} note="Across your workspace" tone="violet" /><Metric label="OPEN TASKS" value={tasks.length - done} note={`${tasks.filter((task) => task.priority === "high" && task.status !== "done").length} high priority`} tone="coral" /><Metric label="COMPLETION" value={`${tasks.length ? Math.round(done / tasks.length * 100) : 0}%`} note={`${done} of ${tasks.length} completed`} tone="mint" /><Metric label="VERIFIED EVENTS" value={workspace.audit.length} note="Protected API actions" tone="blue" /></section><section className="content-grid"><div className="panel"><PanelTitle title="Project pulse" link="/projects" />{workspace.projects.map((project) => <ProjectRow key={project.id} project={project} />)}</div><div className="panel"><PanelTitle title="Recent verified activity" /><div className="activity-list">{workspace.audit.slice(0, 5).map((item) => <div className="activity" key={item.id}><i /><div><strong>{item.action}</strong><p>{item.detail}</p><small>{new Date(item.at).toLocaleString()}</small></div></div>)}</div></div></section></>;
+}
+
+function Projects() {
+  const { workspace, request, refresh } = useWorkspace();
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [task, setTask] = useState({ projectId: workspace.projects[0]?.id || "", title: "", priority: "medium" });
+  async function move(projectId, task) {
+    const order = ["todo", "in-progress", "done"];
+    setBusy(task.id); setError("");
+    try { await request(`/api/projects/${projectId}/tasks/${task.id}`, { method: "PATCH", body: JSON.stringify({ status: order[(order.indexOf(task.status) + 1) % order.length] }) }); await refresh(); }
+    catch (reason) { setError(reason.message); } finally { setBusy(""); }
+  }
+  async function addTask(event) {
+    event.preventDefault(); setError("");
+    try { await request(`/api/projects/${task.projectId}/tasks`, { method: "POST", body: JSON.stringify(task) }); setTask({ ...task, title: "" }); await refresh(); }
+    catch (reason) { setError(reason.message); }
+  }
+  return <><PageIntro eyebrow="PROJECT WORKSPACE" title="Ideas become shared progress." copy="Every update is tied to a verified identity and checked again at the API boundary." /><form className="quick-task-form" onSubmit={addTask}><select aria-label="Project" value={task.projectId} onChange={(event) => setTask({ ...task, projectId: event.target.value })}>{workspace.projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select><input aria-label="Task title" required minLength="3" maxLength="100" placeholder="Add a task for the team…" value={task.title} onChange={(event) => setTask({ ...task, title: event.target.value })} /><select aria-label="Priority" value={task.priority} onChange={(event) => setTask({ ...task, priority: event.target.value })}><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option></select><button className="primary-button" type="submit">Add task</button></form>{error && <div className="inline-error" role="alert">{error}</div>}<div className="project-stack">{workspace.projects.map((project) => <article className="project-panel" key={project.id}><div className="project-heading"><div><span className={`project-dot ${project.color}`} /><div><h2>{project.name}</h2><p>{project.summary}</p></div></div><span className="member-stack">{project.members.map((member) => <i key={member}>{initials(member)}</i>)}</span></div><div className="kanban">{["todo", "in-progress", "done"].map((status) => <div className="kanban-column" key={status}><h3>{status === "todo" ? "TO DO" : status === "in-progress" ? "IN PROGRESS" : "DONE"}<span>{project.tasks.filter((item) => item.status === status).length}</span></h3>{project.tasks.filter((item) => item.status === status).map((item) => <button disabled={busy === item.id} onClick={() => move(project.id, item)} className="task-card" key={item.id}><span className={`priority ${item.priority}`}>{item.priority}</span><strong>{item.title}</strong><small>{item.assignee} · click to advance</small></button>)}</div>)}</div></article>)}</div></>;
+}
+
+function AdminPanel() {
+  const { workspace, request, refresh } = useWorkspace();
+  const [form, setForm] = useState({ name: "", summary: "" });
+  const [message, setMessage] = useState("");
+  async function submit(event) {
+    event.preventDefault(); setMessage("");
+    try { await request("/api/projects", { method: "POST", body: JSON.stringify(form) }); setForm({ name: "", summary: "" }); await refresh(); setMessage("Project created through the admin-protected API."); }
+    catch (reason) { setMessage(reason.message); }
+  }
+  return <><PageIntro eyebrow="ADMIN CONTROL" title="Govern the workspace, visibly." copy="This route is hidden for members and the API independently requires the admin role." /><section className="content-grid admin-grid"><form className="panel admin-form" onSubmit={submit}><PanelTitle title="Create project" /><label>Project name<input required minLength="3" maxLength="60" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} /></label><label>One-line purpose<textarea required minLength="10" maxLength="180" value={form.summary} onChange={(event) => setForm({ ...form, summary: event.target.value })} /></label><button className="primary-button" type="submit">Create protected project</button>{message && <p className="form-message">{message}</p>}</form><div className="panel security-list"><PanelTitle title="Authorization posture" /><SecurityCheck label="Client session" value="TideCloak restored" /><SecurityCheck label="Sender binding" value="DPoP required" /><SecurityCheck label="API identity" value="Embedded JWK verified" /><SecurityCheck label="Admin operation" value="Realm role enforced" /><small>Subject: {workspace.user.subject.slice(0, 18)}…</small></div></section></>;
+}
+
+function Unauthorized() { return <main className="state-page"><div className="state-card"><span className="state-icon">403</span><h1>This space is not assigned to you.</h1><p>Your identity is valid, but the required TideCloak role is missing. Ask a realm administrator to grant access through the governed role workflow.</p><NavLink className="primary-button" to="/dashboard">Return to workspace</NavLink></div></main>; }
+function Brand({ light = false }) { return <a className={`brand ${light ? "light" : ""}`} href="/"><span>TF</span><b>TrustFlow</b></a>; }
+function PageIntro({ eyebrow, title, copy }) { return <header className="page-intro"><span className="eyebrow">{eyebrow}</span><h1>{title}</h1><p>{copy}</p></header>; }
+function Metric({ label, value, note, tone }) { return <article className={`metric ${tone}`}><span>{label}</span><strong>{value}</strong><small>{note}</small></article>; }
+function PanelTitle({ title, link }) { return <div className="panel-title"><h2>{title}</h2>{link && <NavLink to={link}>View all →</NavLink>}</div>; }
+function ProjectRow({ project }) { const done = project.tasks.filter((task) => task.status === "done").length; const pct = project.tasks.length ? Math.round(done / project.tasks.length * 100) : 0; return <div className="project-row"><span className={`project-icon ${project.color}`}>{project.name[0]}</span><div><strong>{project.name}</strong><small>{project.tasks.length} tasks · {done} complete</small><div className="progress"><i style={{ width: `${pct}%` }} /></div></div><b>{pct}%</b></div>; }
+function SecurityCheck({ label, value }) { return <div className="security-check"><span>✓</span><div><small>{label}</small><strong>{value}</strong></div></div>; }

@@ -1,0 +1,24 @@
+.quick-task-form {
+  display: grid;
+  grid-template-columns: 170px 1fr 110px auto;
+  gap: 9px;
+  margin-bottom: 16px;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.quick-task-form input,
+.quick-task-form select {
+  border: 1px solid #dfdbe6;
+  border-radius: 8px;
+  padding: 10px;
+  background: #fff;
+  color: #504c5a;
+  font-size: 10px;
+}
+
+@media (max-width: 760px) {
+  .quick-task-form { grid-template-columns: 1fr; }
+}
