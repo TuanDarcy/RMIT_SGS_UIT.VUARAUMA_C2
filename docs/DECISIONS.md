@@ -17,3 +17,4 @@
 - Completed task/project CRUD without weakening the security boundary: Members may delete tasks, while project deletion remains Admin-only and is checked by the API.
 - Added a governed approval workflow for higher-risk team decisions. A Member or Admin may request approval, only a different Admin may decide it, and only the requester or an Admin may cancel a pending request.
 - Kept approval execution explicit: this prototype records a governed decision and audit event; it does not claim to execute payments, contracts or cryptographic multi-party quorum.
+- Standardized the application on one SaaS design system: Inter typography, an indigo/slate palette, semantic colors only for status, shared form-control tokens, consistent focus states and responsive layouts. This keeps visual polish separate from authorization behavior.

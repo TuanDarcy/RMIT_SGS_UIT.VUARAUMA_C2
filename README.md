@@ -59,6 +59,8 @@ The prototype demonstrates the security boundary rather than a fake login. Witho
 
 See [docs/DEMO_VIDEO.md](docs/DEMO_VIDEO.md) for the narration and recording checklist.
 
+See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) for the evidence-based Challenge 2 completion assessment and remaining submission work.
+
 ## Local development
 
 ### Prerequisites
@@ -139,11 +141,13 @@ The check runs ESLint, Node security/authorization tests and the production Vite
 
 ## Current submission status
 
-- Source application: implemented on branch `codex/trustflow-tidecloak`.
+- Source application: implemented on branch `codex/trustflow-final`.
 - Automated checks: ESLint, 14 Node tests, production build and npm audit passed on 2026-10-22. The earlier Tide Doctor run also passed its configured checks.
+- UI system: one Inter type family, one indigo/slate token palette, shared form controls and responsive desktop/mobile layouts were visually checked on 2026-10-22.
 - TideCloak local verification: realm `trustflow`, client `trustflow-client`, IGA and admin Tide account linking completed. The exported adapter and Docker data remain intentionally local and gitignored.
+- Browser verification: real TideCloak login, callback, session restoration and the protected dashboard were observed locally on 2026-10-22.
 - Authorization status: the linked account has effective `member`; its TrustFlow `admin` grant is an IGA change request awaiting explicit Tide approval in the Tide console.
-- Repository source: feature commits through `d9e20b0` are pushed to `origin/codex/trustflow-tidecloak` on 2026-10-22. This branch is not claimed as merged into `main` or formally submitted to the organizer.
+- Repository source: the working implementation is pushed to `origin/codex/trustflow-final` on 2026-10-22. This branch is not claimed as merged into `main` or formally submitted to the organizer.
 - Final demo video target: `Video.mp4` in the repository root. The existing file predates TrustFlow work and must be replaced with a newly recorded TrustFlow demo before submission; it is not claimed as the final recording.
 
 ## Team
