@@ -23,7 +23,10 @@ export default defineConfig({
     port: 5137,
     strictPort: true,
     proxy: {
-      "/api": "http://localhost:4000",
+      "/api": {
+        target: "http://localhost:4000",
+        xfwd: true,
+      },
     },
   },
 });
